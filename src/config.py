@@ -13,6 +13,8 @@ import logging
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +37,17 @@ AUDIT_DIR = BASE_DIR / "audit"
 # ---------------------------------------------------------------------------
 # OpenRouter Rerank configuration (hardcoded)
 # ---------------------------------------------------------------------------
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/rerank"
-VLLM_BASE_URL=OPENROUTER_BASE_URL
-OPENROUTER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
-VLLM_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL_NAME=OPENROUTER_MODEL
+ONLINE_LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+VLLM_BASE_URL=ONLINE_LLM_BASE_URL
+#ONLINE_LLM_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+ONLINE_LLM_MODEL = "models/gemini-3.5-flash"
+
+VLLM_API_KEY = os.getenv("ONLINE_LLM_KEY")
+MODEL_NAME=ONLINE_LLM_MODEL
 
 OPENROUTER_TOP_N = 3
+#print(ONLINE_LLM_BASE_URL, MODEL_NAME,VLLM_API_KEY)
+print(ONLINE_LLM_BASE_URL, MODEL_NAME)
 
 # ---------------------------------------------------------------------------
 # LibreOffice path (platform-aware)

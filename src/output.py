@@ -61,6 +61,9 @@ def package_case_outputs(
         json.loads(canonical_case.model_dump_json()),
     )
 
+    logger.info("Saving LLM_Review.json (Review method: %s)", 
+                "Deterministic fallback" if llm_review.get("_fallback_reason_detail") == "LLM connection failed" else "LLM API")
+
     write_json(case_dir / "LLM_Review.json", llm_review)
 
     write_json(

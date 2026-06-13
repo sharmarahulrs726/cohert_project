@@ -76,7 +76,8 @@ main.py                              # CLI entry point / orchestration
 ## Prerequisites
 
 ### Python
-- Python 3.11 or later
+- Python 3.11
+-py -3.11 -m venv .venv
 - pip
 
 ### No system dependencies required
@@ -105,7 +106,7 @@ git clone <repo-url>
 cd cohert_project2
 
 # 2. Create and activate a virtual environment (recommended)
-python -m venv .venv
+py -3.11 -m venv .venv
 source .venv/bin/activate    # Linux/macOS
 .venv\Scripts\activate       # Windows
 
@@ -116,7 +117,7 @@ pip install -r requirements.txt
 #    Place case files in input/ (see Input Structure below)
 ```
 
-### Quick start with launcher scripts
+### Quick start with launcher scripts  (or run py main.py)
 
 ```bash
 # Linux/macOS

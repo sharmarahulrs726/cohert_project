@@ -33,6 +33,8 @@ logging.basicConfig(
     format="%(levelname)s: %(message)s",
 )
 
+logger = logging.getLogger(__name__)
+
 from src.config import init_config
 from src.utils import ensure_dir, now_iso
 from src.case_discovery import CaseManifest, discover_cases
@@ -119,7 +121,14 @@ def process_case(
     # Step 3: validate, reconcile
     validation = validate_tax_case(canonical_case)
     discrepancies = reconcile_case(canonical_case)
+    logger.info("Starting LLM review analysis for case: %s", canonical_case.case_id)
     llm_review = run_vllm_review(canonical_case, discrepancies, validation, extracted_docs)
+    
+    if llm_review.get("_fallback_reason_detail") == "LLM connection failed":
+        logger.info("LLM review using deterministic fallback (LLM unavailable)")
+    else:
+        logger.info("LLM review completed via API call")
+        
     decision = compose_decision(discrepancies, llm_review)
 
     generated_files: Dict[str, str] = {}
@@ -246,6 +255,13 @@ def process_case(
     print(f"Case:        {canonical_case.case_id}")
     print(f"Decision:    {decision.decision_type}")
     print(f"Notice:      {'YES' if decision.is_notice_required else 'NO'}")
+    
+    # Show LLM review method
+    if llm_review.get("_fallback_reason_detail") == "LLM connection failed":
+        print(f"LLM Review:  FALLBACK (LLM unavailable - deterministic analysis used)")
+    else:
+        print(f"LLM Review:  API (LLM forensic analysis completed)")
+    
     print(f"Output:      {case_output_dir}")
     print(f"{'=' * 60}\n")
 

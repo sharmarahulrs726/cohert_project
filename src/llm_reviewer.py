@@ -217,6 +217,12 @@ def fallback_llm_review(
     high_count = len([d for d in discrepancies if d.materiality == "high"])
     notice_candidate = any(d.notice_candidate for d in discrepancies)
     manual_review_required = high_count > 0 or not validation.get("is_valid", True)
+    
+    logger.info(
+        "Deterministic fallback active - LLM unavailable. "
+        "Material count: %d, High severity: %d, Notice candidate: %s, Manual review required: %s",
+        material_count, high_count, notice_candidate, manual_review_required
+    )
 
     if high_count > 0 or notice_candidate:
         overall_risk = "high"
