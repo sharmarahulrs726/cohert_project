@@ -1,0 +1,16 @@
+output4_smape/
+├── Record_001_HLJWGL6617F_Vivaan_Pillai/  (×100 folders)
+│   ├── AIS.xlsx         (5 sheets: Summary, Part A - TDS Summary, Part A2 Property, Part C Tax Paid, Part E SFT)
+│   ├── Form_16.xlsx     (1 sheet: quarterly TDS table + salary computation, 23 rows × 5 cols)
+│   └── ITR_extract.xlsx (7 sheets: General Details, Salary, House Property, Other Sources, Deductions, TDS/Bank, SCH TI)
+└── generate.py
+
+
+Breakdown:
+
+Records 001-010: GOOD — all documents internally consistent
+Records 011-100: DISCREPANCY — 90 distinct types covering:
+CRITICAL (16): SFT mismatch, crypto, GST, foreign assets, shell companies, transfer pricing, cash loan violations
+HIGH (39): income suppression, TDS over-claim, capital gains, rental suppression, director remuneration, NRI status
+MEDIUM (33): 80C/80D/80EEA limits, HRA, advance tax interest, ITR form errors
+LOW (2): refund interest, minor issues
