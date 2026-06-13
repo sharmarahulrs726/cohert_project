@@ -3,8 +3,48 @@ py -3.11 -m venv .venv
 pip install --upgrade pip
 pip install -r requirements.txt
 
+watch -n 1 rocm-smi
+
+python main.py
 py main.py
 
-
+python -m venv .venv
+source .venv/bin/activate
 
 whe  we add url code always add in url url = VLLM_BASE_URL + "/chat/completions"
+
+
+
+
+vllm serve Qwen/Qwen3-14B \
+  --served-model-name Qwen3-14B \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --dtype float16 \
+  --trust-remote-code
+
+
+
+
+
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer dummy" \
+  -d '{
+    "model": "Qwen3-14B",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Explain what vLLM is in one sentence."
+      }
+    ],
+    "max_tokens": 100,
+    "temperature": 0.7
+  }'
+
+
+
+
+
+
+pip install openpyxl
