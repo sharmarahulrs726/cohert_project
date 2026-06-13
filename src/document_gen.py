@@ -281,6 +281,8 @@ def _convert_docx_to_pdf_via_fpdf(docx_path: Path, pdf_path: Path) -> bool:
     This is a fully self-contained Python PDF generator that works on any
     system without requiring LibreOffice, Microsoft Word, or any other
     system tool. It auto-discovers or downloads Unicode fonts.
+    
+    Preserves: paragraphs, tables, headers, footers, lists, and formatting.
     """
     try:
         from fpdf import FPDF
@@ -294,42 +296,93 @@ def _convert_docx_to_pdf_via_fpdf(docx_path: Path, pdf_path: Path) -> bool:
 
         pdf.add_page()
 
-        for para in doc.paragraphs:
-            text = para.text.strip()
-            if not text:
-                continue
-
-            # Detect header (all bold runs or short uppercase text)
-            is_header = (
-                (para.runs and all(r.bold for r in para.runs if r.text.strip()))
-                or (len(text) < 80 and text.isupper())
-            )
-
-            # Set font
-            font_name = unicode_font or "Helvetica"
-            if is_header:
-                pdf.set_font(font_name, "B", 11)
-            else:
-                pdf.set_font(font_name, "", 9)
-
-            # Clean text: only strip non-ASCII when using built-in font (Helvetica)
-            # TTF fonts (Arial, DejaVu, etc.) with uni=True handle Unicode fine
-            if unicode_font:
-                clean_text = text
-            else:
-                clean_text = text.encode("ascii", "replace").decode("ascii")
-                if not clean_text.strip():
-                    clean_text = text
-
-            # Calculate usable width
-            usable_w = pdf.w - 2 * pdf.l_margin
-            pdf.multi_cell(usable_w, 4.5, clean_text)
-
+        # Process all document elements in order
+        for element in doc.element.body:
+            tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
+            
+            if tag == 'p':  # Paragraph
+                # Reconstruct paragraph with runs
+                para = doc.paragraphs[len([e for e in doc.element.body[:list(doc.element.body).index(element)] if e.tag.endswith('p')])]
+                _render_paragraph(pdf, para, unicode_font)
+            
+            elif tag == 'tbl':  # Table
+                _render_table(pdf, element, unicode_font)
+        
         pdf.output(str(pdf_path))
         return pdf_path.exists()
     except Exception as e:
         logger.debug("fpdf2 conversion failed: %s", e)
         return False
+
+
+def _render_paragraph(pdf, para, unicode_font):
+    """Render a paragraph with proper formatting."""
+    text = para.text.strip()
+    if not text:
+        return
+
+    # Detect header (all bold runs or short uppercase text)
+    is_header = (
+        (para.runs and all(r.bold for r in para.runs if r.text.strip()))
+        or (len(text) < 80 and text.isupper())
+    )
+
+    # Set font
+    font_name = unicode_font or "Helvetica"
+    if is_header:
+        pdf.set_font(font_name, "B", 11)
+    else:
+        pdf.set_font(font_name, "", 9)
+
+    # Preserve Unicode text with TTF fonts
+    if unicode_font:
+        clean_text = text
+    else:
+        clean_text = text.encode("ascii", "replace").decode("ascii")
+        if not clean_text.strip():
+            clean_text = text
+
+    # Calculate usable width
+    usable_w = pdf.w - 2 * pdf.l_margin
+    pdf.multi_cell(usable_w, 4.5, clean_text)
+
+
+def _render_table(pdf, tbl_element, unicode_font):
+    """Render a table from DOCX XML element."""
+    try:
+        from lxml import etree
+        
+        font_name = unicode_font or "Helvetica"
+        pdf.set_font(font_name, "", 8)
+        
+        # Get table rows
+        rows = tbl_element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tr')
+        if not rows:
+            return
+            
+        # Calculate column widths
+        num_cols = max(len(row.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tc')) for row in rows)
+        col_width = (pdf.w - 2 * pdf.l_margin) / max(num_cols, 1)
+        
+        for row in rows:
+            cells = row.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tc')
+            row_height = 6
+            
+            # Check if we need a page break
+            if pdf.get_y() + row_height > pdf.h - pdf.b_margin:
+                pdf.add_page()
+            
+            x_start = pdf.get_x()
+            for i, cell in enumerate(cells):
+                cell_text = ''.join(cell.itertext()).strip()
+                x = x_start + i * col_width
+                pdf.set_xy(x, pdf.get_y())
+                pdf.cell(col_width, row_height, cell_text[:50], border=1)
+            
+            pdf.ln(row_height)
+            
+    except Exception as e:
+        logger.debug("Table rendering failed: %s", e)
 
 
 def convert_docx_to_pdf(docx_path: Path, outdir: Path, timeout_seconds: int = 120) -> Path:

@@ -1,13 +1,14 @@
 """
-vLLM analytical reviewer — uses an LLM to generate a discrepancy analysis report.
+Universal LLM analytical reviewer — uses any LLM provider to generate 
+a discrepancy analysis report with deterministic fallback.
 
-If the LLM call fails, a deterministic fallback produces the review based
-solely on rule-based discrepancy data.
+Supports: OpenAI, OpenRouter, vLLM, Ollama, Local LLMs
 """
 
 import json
 import logging
-from typing import Any, Dict, List
+import os
+from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
@@ -19,9 +20,66 @@ from src.discrepancies import Discrepancy, asdict
 
 
 # ---------------------------------------------------------------------------
-# OpenAI client
+# Universal LLM Client Factory
 # ---------------------------------------------------------------------------
-client = OpenAI(base_url=VLLM_BASE_URL, api_key=VLLM_API_KEY)
+def create_llm_client() -> OpenAI:
+    """
+    Create an OpenAI-compatible client for any LLM provider.
+    
+    Supports:
+    - OpenAI (api.openai.com)
+    - OpenRouter (openrouter.ai)
+    - vLLM (localhost:8000/v1)
+    - Ollama (localhost:11434/v1)
+    - Local LLMs (any OpenAI-compatible endpoint)
+    """
+    base_url = os.getenv("LLM_BASE_URL", VLLM_BASE_URL)
+    api_key = os.getenv("LLM_API_KEY", VLLM_API_KEY)
+    model = os.getenv("LLM_MODEL", MODEL_NAME)
+    
+    # Auto-detect provider and adjust settings
+    provider = _detect_provider(base_url)
+    
+    # Some providers don't need API keys
+    if provider == "ollama" and not api_key:
+        api_key = "ollama"
+    elif provider == "local" and not api_key:
+        api_key = "dummy"
+    
+    logger.info("LLM Provider: %s | Base URL: %s | Model: %s", provider, base_url, model)
+    
+    return OpenAI(base_url=base_url, api_key=api_key)
+
+
+def _detect_provider(base_url: str) -> str:
+    """Detect LLM provider from base URL."""
+    url_lower = base_url.lower()
+    if "openrouter" in url_lower:
+        return "openrouter"
+    elif "openai" in url_lower:
+        return "openai"
+    elif "localhost" in url_lower or "127.0.0.1" in url_lower:
+        if "8000" in url_lower or "vllm" in url_lower:
+            return "vllm"
+        elif "11434" in url_lower:
+            return "ollama"
+        else:
+            return "local"
+    else:
+        return "custom"
+
+
+# ---------------------------------------------------------------------------
+# Global client (lazy initialization)
+# ---------------------------------------------------------------------------
+_client: Optional[OpenAI] = None
+
+def get_client() -> OpenAI:
+    """Get or create the LLM client."""
+    global _client
+    if _client is None:
+        _client = create_llm_client()
+    return _client
 
 
 # ---------------------------------------------------------------------------
@@ -319,12 +377,31 @@ def run_vllm_review(
     """
     try:
         messages = build_llm_messages(canonical_case, discrepancies, validation, extracted_docs)
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=messages,
-            temperature=0.1,
-            extra_body={"structured_outputs": {"json": LLM_OUTPUT_SCHEMA}},
-        )
+        
+        # Try with response_format first (OpenAI-compatible), then without
+        # Some models/providers (like OpenRouter with certain models) don't support response_format
+        response = None
+        for use_format in [True, False]:
+            try:
+                kwargs = {
+                    "model": MODEL_NAME,
+                    "messages": messages,
+                    "temperature": 0.1,
+                }
+                
+                if use_format:
+                    kwargs["response_format"] = {"type": "json_object"}
+                
+                client = get_client()
+                response = client.chat.completions.create(**kwargs)
+                break
+            except Exception as fmt_error:
+                logger.debug("LLM call with response_format=%s failed: %s", use_format, fmt_error)
+                if not use_format:
+                    raise
+        
+        if response is None:
+            raise RuntimeError("All LLM call attempts failed")
         content = response.choices[0].message.content
         if isinstance(content, list):
             content = "".join(
@@ -332,7 +409,20 @@ def run_vllm_review(
                 for block in content
                 if isinstance(block, dict)
             )
-        return json.loads(content)
+        
+        if not content or not content.strip():
+            raise ValueError("Empty response from LLM")
+        
+        parsed = json.loads(content)
+        
+        # Validate required keys exist
+        required_keys = ["case_summary", "findings", "investigation_narrative", "validation_steps"]
+        missing_keys = [k for k in required_keys if k not in parsed]
+        if missing_keys:
+            logger.warning("LLM response missing required keys: %s - using fallback", missing_keys)
+            raise ValueError(f"Missing required keys: {missing_keys}")
+        
+        return parsed
     except Exception as e:
         logger.warning("LLM not connected: %s — using deterministic fallback", e)
         logger.info("PDF data not coming - LLM unavailable for forensic analysis")

@@ -37,10 +37,10 @@ AUDIT_DIR = BASE_DIR / "audit"
 # ---------------------------------------------------------------------------
 # OpenRouter Rerank configuration (hardcoded)
 # ---------------------------------------------------------------------------
-ONLINE_LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+ONLINE_LLM_BASE_URL = "https://openrouter.ai/api/v1"
 VLLM_BASE_URL=ONLINE_LLM_BASE_URL
 #ONLINE_LLM_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
-ONLINE_LLM_MODEL = "models/gemini-3.5-flash"
+ONLINE_LLM_MODEL = "qwen/qwen3-14b"
 
 VLLM_API_KEY = os.getenv("ONLINE_LLM_KEY")
 MODEL_NAME=ONLINE_LLM_MODEL

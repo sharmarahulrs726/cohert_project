@@ -33,18 +33,50 @@ def compose_decision(
     - ``NO_DISCREPANCY``        — no material discrepancies found
     - ``NOTICE_AND_REPORT``     — one or more discrepancies trigger a notice
     - ``REPORT_ONLY``           — discrepancies exist but do not trigger a notice
-    """
-    notice_required = any(d.notice_candidate for d in discrepancies)
 
+    Logic:
+    1. First check LLM review if available and valid (not fallback)
+    2. If LLM says notice needed, honor it
+    3. Fallback to rule-based if LLM unavailable or inconclusive
+    """
+    # Check if LLM review is valid (not fallback)
+    llm_valid = (
+        llm_summary 
+        and not llm_summary.get("_fallback_reason_detail") == "LLM connection failed"
+        and llm_summary.get("case_summary", {}).get("notice_candidate") is not None
+    )
+    
+    # Rule-based notice trigger
+    rule_notice_required = any(d.notice_candidate for d in discrepancies)
+    
+    # LLM-based notice decision (if LLM is valid)
+    llm_notice_required = False
+    if llm_valid:
+        llm_notice_required = llm_summary.get("case_summary", {}).get("notice_candidate", False)
+        logger.info("LLM review notice_candidate: %s", llm_notice_required)
+    
+    # Final decision: LLM overrides rules if available and definitive
+    if llm_valid:
+        notice_required = llm_notice_required
+        if llm_notice_required:
+            reason_codes = ["LLM_RECOMMENDED_NOTICE"]
+        else:
+            reason_codes = ["LLM_NO_NOTICE_REQUIRED"]
+    else:
+        notice_required = rule_notice_required
+        if rule_notice_required:
+            reason_codes = ["RULE_TRIGGERED_NOTICE"]
+        else:
+            reason_codes = ["NO_MATERIAL_DISCREPANCY"]
+    
     if not discrepancies:
         decision_type = "NO_DISCREPANCY"
         reason_codes = ["NO_MATERIAL_DISCREPANCY"]
+        notice_required = False
     elif notice_required:
         decision_type = "NOTICE_AND_REPORT"
-        reason_codes = ["RULE_TRIGGERED_NOTICE"]
     else:
         decision_type = "REPORT_ONLY"
-        reason_codes = ["DISCREPANCY_REVIEW_ONLY"]
 
     return DecisionResult(
         is_notice_required=notice_required,

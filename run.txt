@@ -4,3 +4,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 py main.py
+
+
+
+whe  we add url code always add in url url = VLLM_BASE_URL + "/chat/completions"
