@@ -38,6 +38,7 @@ AUDIT_DIR = BASE_DIR / "audit"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/rerank"
 VLLM_BASE_URL=OPENROUTER_BASE_URL
 OPENROUTER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+VLLM_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL_NAME=OPENROUTER_MODEL
 
 OPENROUTER_TOP_N = 3
