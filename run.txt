@@ -48,3 +48,11 @@ curl http://localhost:8000/v1/chat/completions \
 
 
 pip install openpyxl
+
+
+
+ 8  python main.py
+    9  git pull origin main
+   10  python main.py
+
+

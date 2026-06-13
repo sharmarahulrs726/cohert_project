@@ -378,45 +378,62 @@ def run_vllm_review(
     try:
         messages = build_llm_messages(canonical_case, discrepancies, validation, extracted_docs)
         
-        # Enhanced system prompt to force structured JSON output
+        # Override system prompt to FORCE strict JSON-only output
+        # This prevents reasoning_content from appearing in the response
         messages[0]["content"] = (
-            "You are a senior Indian Income Tax Officer with deep expertise in ITR "
-            "verification, TDS reconciliation, and tax compliance analysis. Your task is "
-            "to forensically analyse the tax documents provided below and identify critical "
-            "discrepancies, mismatch, or compliance issue that may warrant a scrutiny "
-            "notice under the Income Tax Act, 1961.\n\n"
-            "You have access to TWO sources of evidence:\n"
-            "1. PRE-COMPUTED DISCREPANCIES (Discrepancy_Register.json) — rule-based "
-            "comparisons between Form 16, AIS, and ITR fields (salary, TDS, interest, "
-            "dividend, securities, bank deposits vs total income). These are your primary "
-            "source of truth but may miss context.\n"
-            "2. RAW EXTRACTED DOCUMENTS (data_extraction.json) — complete sheet-by-sheet "
-            "data from every XLSX/DOCX (AIS: Summary, Part A-TDS, Part A2 Property, "
-            "Part C Tax Paid, Part E SFT; Form 16; ITR: all schedules). Use these for "
-            "independent forensic verification.\n\n"
-            "YOUR ANALYSIS MUST:\n"
-            "- Cross-reference EACH pre-computed discrepancy against the raw sheets to "
-            "confirm, refine, or reject it with specific cell/sheet references\n"
-            "- Identify ADDITIONAL discrepancies NOT caught by rules (e.g., property "
-            "income mismatch, TDS credit mismatch across quarters, SFT transaction "
-            "inconsistencies, deduction claim anomalies)\n"
-            "- Assess materiality per IT Act thresholds (₹50k general, ₹1L bank deposits)\n"
-            "- Recommend specific validation steps: document requests, third-party "
-            "verification, assessee questioning\n"
-            "- Output ONLY valid JSON matching the exact schema provided below.\n\n"
-            "REQUIRED OUTPUT SCHEMA (return nothing else):\n"
-            "{\"case_summary\": {\"overall_risk\": \"low/medium/high\", \"material_discrepancy_count\": number, \"manual_review_required\": boolean, \"notice_candidate\": boolean, \"summary_text\": \"string\"}}, \"findings\": [{\"finding_id\": \"string\", \"category\": \"string\", \"status\": \"confirmed/probable/uncertain\", \"materiality\": \"low/medium/high\", \"difference_summary\": \"string\", \"reasoning\": \"string\", \"source_support\": [\"string\"], \"sheet_references\": [\"string\"], \"manual_review_required\": boolean}], \"investigation_narrative\": {\"facts_established\": [\"string\"], \"issues_observed\": [\"string\"], \"uncertainties\": [\"string\"], \"recommended_next_step\": \"no_action/manual_review/issue_notice\"}}, \"validation_steps\": [{\"step_id\": \"string\", \"description\": \"string\", \"priority\": \"high/medium/low\", \"responsible_party\": \"assessee/deductor/bank/registry/third_party\", \"document_requested\": \"string\", \"legal_basis\": \"string\"}]"
+            "You are a senior Indian Income Tax Officer. Forensically analyse tax documents "
+            "and output ONLY valid JSON matching this exact schema. NO reasoning, NO explanations, "
+            "NO markdown, NO extra text. Just the JSON object.\n\n"
+            "Schema:\n"
+            "{\n"
+            "  \"case_summary\": {\n"
+            "    \"overall_risk\": \"low|medium|high\",\n"
+            "    \"material_discrepancy_count\": 0,\n"
+            "    \"manual_review_required\": true,\n"
+            "    \"notice_candidate\": true,\n"
+            "    \"summary_text\": \"string\"\n"
+            "  },\n"
+            "  \"findings\": [\n"
+            "    {\n"
+            "      \"finding_id\": \"string\",\n"
+            "      \"category\": \"string\",\n"
+            "      \"status\": \"confirmed|probable|uncertain\",\n"
+            "      \"materiality\": \"low|medium|high\",\n"
+            "      \"difference_summary\": \"string\",\n"
+            "      \"reasoning\": \"string\",\n"
+            "      \"source_support\": [\"string\"],\n"
+            "      \"sheet_references\": [\"string\"],\n"
+            "      \"manual_review_required\": true\n"
+            "    }\n"
+            "  ],\n"
+            "  \"investigation_narrative\": {\n"
+            "    \"facts_established\": [\"string\"],\n"
+            "    \"issues_observed\": [\"string\"],\n"
+            "    \"uncertainties\": [\"string\"],\n"
+            "    \"recommended_next_step\": \"no_action|manual_review|issue_notice\"\n"
+            "  },\n"
+            "  \"validation_steps\": [\n"
+            "    {\n"
+            "      \"step_id\": \"string\",\n"
+            "      \"description\": \"string\",\n"
+            "      \"priority\": \"high|medium|low\",\n"
+            "      \"responsible_party\": \"assessee|deductor|bank|registry|third_party\",\n"
+            "      \"document_requested\": \"string\",\n"
+            "      \"legal_basis\": \"string\"\n"
+            "    }\n"
+            "  ]\n"
+            "}\n\n"
+            "CRITICAL: Return ONLY the JSON object. No reasoning, no explanations, no text before/after."
         )
         
-        # Try with response_format first (OpenAI-compatible), then without
-        # Some models/providers (like OpenRouter with certain models) don't support response_format
+        # Try with response_format first (vLLM supports this)
         response = None
         for use_format in [True, False]:
             try:
                 kwargs = {
                     "model": MODEL_NAME,
                     "messages": messages,
-                    "temperature": 0.1,
+                    "temperature": 0.0,  # Zero temperature for deterministic JSON
                 }
                 
                 if use_format:
@@ -432,7 +449,10 @@ def run_vllm_review(
         
         if response is None:
             raise RuntimeError("All LLM call attempts failed")
+        
         content = response.choices[0].message.content
+        
+        # Handle reasoning_content that vLLM sometimes includes
         if isinstance(content, list):
             content = "".join(
                 block.get("text", "")
@@ -443,6 +463,22 @@ def run_vllm_review(
         if not content or not content.strip():
             raise ValueError("Empty response from LLM")
         
+        # Extract JSON if wrapped in markdown or has extra text
+        content = content.strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+        
+        # Find JSON object boundaries if extra text present
+        first_brace = content.find("{")
+        last_brace = content.rfind("}")
+        if first_brace >= 0 and last_brace > first_brace:
+            content = content[first_brace:last_brace+1]
+        
         parsed = json.loads(content)
         
         # Validate required keys exist
@@ -452,6 +488,7 @@ def run_vllm_review(
             logger.warning("LLM response missing required keys: %s - using fallback", missing_keys)
             raise ValueError(f"Missing required keys: {missing_keys}")
         
+        logger.info("LLM review completed via API call (provider: %s)", _detect_provider(os.getenv("LLM_BASE_URL", VLLM_BASE_URL)))
         return parsed
     except Exception as e:
         logger.warning("LLM not connected: %s — using deterministic fallback", e)
