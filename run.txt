@@ -2,14 +2,15 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install --upgrade pip
 pip install -r requirements.txt
+py main.py
+
 
 watch -n 1 rocm-smi
 
-python main.py
-py main.py
 
 python -m venv .venv
 source .venv/bin/activate
+pip install -r requirements.txt
 
 whe  we add url code always add in url url = VLLM_BASE_URL + "/chat/completions"
 
@@ -51,8 +52,8 @@ pip install openpyxl
 
 
 
- 8  python main.py
-    9  git pull origin main
-   10  python main.py
-
+	python main.py
+ 	git pull origin main
+	python main.py
+	git pull origin main
 

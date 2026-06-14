@@ -379,11 +379,15 @@ def run_vllm_review(
         messages = build_llm_messages(canonical_case, discrepancies, validation, extracted_docs)
         
         # Override system prompt to FORCE strict JSON-only output
-        # This prevents reasoning_content from appearing in the response
+        # Preserves the full forensic persona while enforcing JSON-only response
         messages[0]["content"] = (
-            "You are a senior Indian Income Tax Officer. Forensically analyse tax documents "
-            "and output ONLY valid JSON matching this exact schema. NO reasoning, NO explanations, "
-            "NO markdown, NO extra text. Just the JSON object.\n\n"
+            "You are a senior Indian Income Tax Officer with deep expertise in ITR "
+            "verification, TDS reconciliation, and tax compliance analysis. Your task is "
+            "to forensically analyse the tax documents provided below and identify critical "
+            "discrepancies, mismatch, or compliance issue that may warrant a scrutiny "
+            "notice under the Income Tax Act, 1961.\n\n"
+            "IMPORTANT: Output ONLY valid JSON matching the schema below. "
+            "NO reasoning, NO explanations, NO markdown, NO extra text. Just the JSON object.\n\n"
             "Schema:\n"
             "{\n"
             "  \"case_summary\": {\n"
@@ -423,7 +427,9 @@ def run_vllm_review(
             "    }\n"
             "  ]\n"
             "}\n\n"
-            "CRITICAL: Return ONLY the JSON object. No reasoning, no explanations, no text before/after."
+            "CRITICAL: Return ONLY the JSON object. No reasoning, no explanations, no text before/after.\n"
+            "Only recommend notice_candidate=true if there is a genuine tax discrepancy "
+            "that meets materiality thresholds per the Income Tax Act, 1961."
         )
         
         # Try with response_format first (vLLM supports this)

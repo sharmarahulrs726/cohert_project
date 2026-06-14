@@ -46,7 +46,7 @@ def compose_decision(
         and llm_summary.get("case_summary", {}).get("notice_candidate") is not None
     )
     
-    # Rule-based notice trigger
+    # Rule-based notice trigger (per Indian Tax Law thresholds)
     rule_notice_required = any(d.notice_candidate for d in discrepancies)
     
     # LLM-based notice decision (if LLM is valid)
@@ -55,13 +55,19 @@ def compose_decision(
         llm_notice_required = llm_summary.get("case_summary", {}).get("notice_candidate", False)
         logger.info("LLM review notice_candidate: %s", llm_notice_required)
     
-    # Final decision: LLM overrides rules if available and definitive
-    if llm_valid:
-        notice_required = llm_notice_required
-        if llm_notice_required:
-            reason_codes = ["LLM_RECOMMENDED_NOTICE"]
+    # Cross-validate LLM notice decision against Indian Tax Law
+    # Notice must be backed by actual discrepancies meeting statutory thresholds
+    if llm_valid and llm_notice_required:
+        if rule_notice_required:
+            notice_required = True
+            reason_codes = ["LLM_RECOMMENDED_NOTICE", "RULE_TRIGGERED_NOTICE"]
         else:
-            reason_codes = ["LLM_NO_NOTICE_REQUIRED"]
+            logger.warning("LLM recommended notice but no discrepancy meets Indian Tax Law threshold — overriding to no notice")
+            notice_required = False
+            reason_codes = ["LLM_NOTICE_OVERRIDDEN_NO_THRESHOLD"]
+    elif llm_valid and not llm_notice_required:
+        notice_required = False
+        reason_codes = ["LLM_NO_NOTICE_REQUIRED"]
     else:
         notice_required = rule_notice_required
         if rule_notice_required:

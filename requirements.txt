@@ -18,5 +18,5 @@ fpdf2>=2.8,<3.0
 
 # Document AI (optional — graceful fallback if missing)
 docling>=2.0,<3.0
-
+openpyxl
 python-dotenv

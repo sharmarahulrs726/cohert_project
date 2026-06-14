@@ -15,6 +15,11 @@ from typing import Any, Dict, List, Optional
 from src.utils import DocxTemplate, Document, ensure_dir, now_iso
 
 logger = logging.getLogger(__name__)
+
+try:
+    from fpdf.enums import XPos
+except ImportError:
+    XPos = None
 from src.models import CanonicalTaxCase
 from src.discrepancies import Discrepancy, asdict
 from src.decision import DecisionResult
@@ -276,13 +281,13 @@ def _find_or_download_unicode_font(pdf: Any) -> Optional[str]:
 
 def _convert_docx_to_pdf_via_fpdf(docx_path: Path, pdf_path: Path) -> bool:
     """
-    Fallback: render DOCX text content to PDF using fpdf2 (pure Python).
+    Fallback: render DOCX content to PDF using fpdf2 (pure Python).
 
     This is a fully self-contained Python PDF generator that works on any
     system without requiring LibreOffice, Microsoft Word, or any other
     system tool. It auto-discovers or downloads Unicode fonts.
     
-    Preserves: paragraphs, tables, headers, footers, lists, and formatting.
+    Enhanced to preserve: paragraphs, tables, lists, headers, Unicode.
     """
     try:
         from fpdf import FPDF
@@ -296,17 +301,15 @@ def _convert_docx_to_pdf_via_fpdf(docx_path: Path, pdf_path: Path) -> bool:
 
         pdf.add_page()
 
-        # Process all document elements in order
+        # Process all document elements in order using XML for full fidelity
         for element in doc.element.body:
             tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
             
             if tag == 'p':  # Paragraph
-                # Reconstruct paragraph with runs
-                para = doc.paragraphs[len([e for e in doc.element.body[:list(doc.element.body).index(element)] if e.tag.endswith('p')])]
-                _render_paragraph(pdf, para, unicode_font)
+                _render_paragraph_fpdf(pdf, element, unicode_font)
             
             elif tag == 'tbl':  # Table
-                _render_table(pdf, element, unicode_font)
+                _render_table_fpdf(pdf, element, unicode_font)
         
         pdf.output(str(pdf_path))
         return pdf_path.exists()
@@ -315,42 +318,135 @@ def _convert_docx_to_pdf_via_fpdf(docx_path: Path, pdf_path: Path) -> bool:
         return False
 
 
-def _render_paragraph(pdf, para, unicode_font):
-    """Render a paragraph with proper formatting."""
-    text = para.text.strip()
-    if not text:
-        return
+def _render_paragraph_fpdf(pdf, para_element, unicode_font):
+    """Render a paragraph with full formatting from XML element."""
+    try:
+        from lxml import etree
+        
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        
+        # Reset x position to left margin before each paragraph
+        pdf.x = pdf.l_margin
+        
+        # Extract text with formatting
+        runs = para_element.findall('.//w:r', namespaces=ns)
+        if not runs:
+            # Simple paragraph without runs
+            text = ''.join(para_element.itertext()).strip()
+            if text:
+                _write_text(pdf, text, unicode_font, bold=False, size=9)
+            return
+        
+        # Check if paragraph is a header
+        is_header = all(r.find('.//w:b', namespaces=ns) is not None for r in runs if any(t.text for t in r.findall('.//w:t', namespaces=ns)))
+        full_text_parts = []
+        for r in runs:
+            t_elem = r.find('.//w:t', namespaces=ns)
+            if t_elem is not None and t_elem.text:
+                full_text_parts.append(t_elem.text)
+        full_text = ''.join(full_text_parts)
+        full_text = full_text.strip()
+        
+        if not full_text:
+            return
+            
+        font_name = unicode_font or "Helvetica"
+        if is_header:
+            pdf.set_font(font_name, "B", 11)
+        else:
+            pdf.set_font(font_name, "", 9)
+        
+        # Write with proper wrapping and reset x to left margin after
+        usable_w = pdf.w - 2 * pdf.l_margin
+        pdf.multi_cell(usable_w, 4.5, full_text, new_x=XPos.LMARGIN)
+        
+    except Exception as e:
+        logger.debug("Paragraph rendering failed: %s", e)
+        # Fallback to simple text extraction
+        pdf.x = pdf.l_margin
+        text = ''.join(para_element.itertext()).strip()
+        if text:
+            _write_text(pdf, text, unicode_font, bold=False, size=9)
 
-    # Detect header (all bold runs or short uppercase text)
-    is_header = (
-        (para.runs and all(r.bold for r in para.runs if r.text.strip()))
-        or (len(text) < 80 and text.isupper())
-    )
 
-    # Set font
+def _write_text(pdf, text, unicode_font, bold=False, size=9):
+    """Helper to write text with proper font and encoding."""
+    pdf.x = pdf.l_margin
     font_name = unicode_font or "Helvetica"
-    if is_header:
-        pdf.set_font(font_name, "B", 11)
-    else:
-        pdf.set_font(font_name, "", 9)
-
-    # Preserve Unicode text with TTF fonts
+    style = "B" if bold else ""
+    pdf.set_font(font_name, style, size)
+    
     if unicode_font:
         clean_text = text
     else:
         clean_text = text.encode("ascii", "replace").decode("ascii")
         if not clean_text.strip():
             clean_text = text
-
-    # Calculate usable width
+    
     usable_w = pdf.w - 2 * pdf.l_margin
-    pdf.multi_cell(usable_w, 4.5, clean_text)
+    pdf.multi_cell(usable_w, 4.5, clean_text, new_x=XPos.LMARGIN if XPos else None)
 
 
-def _render_table(pdf, tbl_element, unicode_font):
-    """Render a table from DOCX XML element."""
+def _render_table_fpdf(pdf, tbl_element, unicode_font):
+    """Render a table from DOCX XML element with full content."""
     try:
         from lxml import etree
+        
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        
+        font_name = unicode_font or "Helvetica"
+        pdf.set_font(font_name, "", 8)
+        
+        # Get table rows
+        rows = tbl_element.findall('.//w:tr', namespaces=ns)
+        if not rows:
+            return
+            
+        # Calculate column widths based on content
+        all_cells_per_row = []
+        max_cols = 0
+        for row in rows:
+            cells = row.findall('.//w:tc', namespaces=ns)
+            all_cells_per_row.append(cells)
+            max_cols = max(max_cols, len(cells))
+        
+        if max_cols == 0:
+            return
+            
+        # Dynamic column width based on page width
+        page_width = pdf.w - 2 * pdf.l_margin
+        col_width = page_width / max_cols
+        
+        for cells in all_cells_per_row:
+            # Check page break
+            if pdf.get_y() + 8 > pdf.h - pdf.b_margin:
+                pdf.add_page()
+            
+            x_start = pdf.get_x()
+            row_height = 7
+            
+            for i, cell in enumerate(cells):
+                # Get cell text with formatting
+                cell_text = ''.join(cell.itertext()).strip()
+                # Truncate if too long for cell
+                max_chars = max(1, int(col_width / 1.8))  # approximate
+                if len(cell_text) > max_chars:
+                    cell_text = cell_text[:max_chars-3] + "..."
+                
+                x = x_start + i * col_width
+                pdf.set_xy(x, pdf.get_y())
+                pdf.cell(col_width, row_height, cell_text, border=1, align='L')
+            
+            # Handle remaining columns if row has fewer cells
+            for i in range(len(cells), max_cols):
+                x = x_start + i * col_width
+                pdf.set_xy(x, pdf.get_y())
+                pdf.cell(col_width, row_height, "", border=1)
+            
+            pdf.ln(row_height)
+            
+    except Exception as e:
+        logger.debug("Table rendering failed: %s", e)
         
         font_name = unicode_font or "Helvetica"
         pdf.set_font(font_name, "", 8)

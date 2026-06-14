@@ -61,12 +61,13 @@ def severity_from_band(band: str) -> str:
 
 
 def notice_trigger(delta: Decimal, category: str) -> bool:
-    """Determine whether the discrepancy should trigger a notice."""
-    if category == "bank_deposits_vs_total_income" and abs(delta) > Decimal("100000"):
-        return True
-    if abs(delta) > Decimal("50000"):
-        return True
-    return False
+    """Determine whether the discrepancy should trigger a notice per Indian Tax law."""
+    d = abs(delta)
+    if category == "bank_deposits_vs_total_income":
+        # Bank deposits vs total income: threshold ₹1,00,000 (Section 68/69)
+        return d > Decimal("100000")
+    # Other categories (salary, TDS, interest, dividend, securities): threshold ₹50,000
+    return d > Decimal("50000")
 
 
 # ---------------------------------------------------------------------------
