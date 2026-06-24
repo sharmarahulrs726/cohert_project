@@ -39,3 +39,14 @@ SRS.ipynb
 
 # Environment
 .env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# API runtime
+api/input/
+api/output/
+api/__pycache__/
+*.log

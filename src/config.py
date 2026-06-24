@@ -5,8 +5,9 @@ Handles directory auto-detection, template path discovery,
 and all configurable constants used throughout the system.
 
 Usage:
-    from src.config import BASE_DIR, init_config
+    from src.config import BASE_DIR, init_config, get_llm_config
     init_config()  # bootstraps directories and detects templates
+    cfg = get_llm_config()  # fresh config every call (reads .env)
 """
 
 import logging
@@ -14,7 +15,6 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -28,26 +28,64 @@ AUDIT_DIR = BASE_DIR / "audit"
 
 
 # ---------------------------------------------------------------------------
-# vLLM / LLM configuration (environment-driven)(Add url before /chat/completions my code add this)
+# LLM configuration (runtime-evaluated via get_llm_config())
 # ---------------------------------------------------------------------------
-#VLLM_BASE_URL: str = os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
-#MODEL_NAME: str = os.getenv("VLLM_MODEL_NAME", "Qwen3-14B")
-#VLLM_API_KEY: str = os.getenv("VLLM_API_KEY", "dummy")
+def get_llm_config(force_reload: bool = False) -> dict:
+    """
+    Get fresh LLM configuration from environment.
+    
+    Args:
+        force_reload: If True, force re-load .env file before reading.
+        
+    Returns:
+        Dict with base_url, api_key, model, provider
+    """
+    if force_reload:
+        load_dotenv(override=True)
+    else:
+        load_dotenv()  # safe to call multiple times; only loads if not loaded
+    
+    base_url = os.getenv("LLM_BASE_URL") or os.getenv("VLLM_BASE_URL") or "https://openrouter.ai/api/v1"
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("ONLINE_LLM_KEY") or os.getenv("VLLM_API_KEY")
+    model = os.getenv("LLM_MODEL") or os.getenv("VLLM_MODEL_NAME") 
+    # Provider detection
+    url_lower = base_url.lower()
+    if "openrouter" in url_lower:
+        provider = "openrouter"
+    elif "openai" in url_lower:
+        provider = "openai"
+    elif "localhost" in url_lower or "127.0.0.1" in url_lower:
+        if "8000" in url_lower or "vllm" in url_lower:
+            provider = "vllm"
+        elif "11434" in url_lower:
+            provider = "ollama"
+        else:
+            provider = "local"
+    else:
+        provider = "custom"
+    
+    # Provider-specific defaults
+    if provider == "ollama" and not api_key:
+        api_key = "ollama"
+    elif provider == "local" and not api_key:
+        api_key = "dummy"
+    if provider == "ollama" and not base_url.endswith("/v1"):
+        base_url = base_url.rstrip("/") + "/v1"
+    return {
+        "base_url": base_url,
+        "api_key": api_key,
+        "model": model,
+        "provider": provider,
+    }
 
-# ---------------------------------------------------------------------------
-# OpenRouter  configuration (Add url before /chat/completions my code add this)
-# ---------------------------------------------------------------------------
-ONLINE_LLM_BASE_URL = "https://openrouter.ai/api/v1"
-VLLM_BASE_URL=ONLINE_LLM_BASE_URL
-#ONLINE_LLM_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
-ONLINE_LLM_MODEL = "qwen/qwen3-14b"
-MODEL_NAME=ONLINE_LLM_MODEL
-VLLM_API_KEY = os.getenv("ONLINE_LLM_KEY")
 
+# Backward-compat constants (evaluated once at import; prefer get_llm_config())
+load_dotenv()
+VLLM_BASE_URL = os.getenv("LLM_BASE_URL") or os.getenv("VLLM_BASE_URL") or "https://openrouter.ai/api/v1"
+MODEL_NAME = os.getenv("LLM_MODEL") or os.getenv("VLLM_MODEL_NAME")
+VLLM_API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("ONLINE_LLM_KEY") or os.getenv("VLLM_API_KEY")
 
 OPENROUTER_TOP_N = 3
-#print(ONLINE_LLM_BASE_URL, MODEL_NAME,VLLM_API_KEY)
-print(ONLINE_LLM_BASE_URL, MODEL_NAME)
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,9 @@ watch -n 1 rocm-smi
 
 python -m venv .venv
 source .venv/bin/activate
+
+python.exe -m pip install --upgrade pip
+
 pip install -r requirements.txt
 
 whe  we add url code always add in url url = VLLM_BASE_URL + "/chat/completions"
@@ -56,4 +59,9 @@ pip install openpyxl
  	git pull origin main
 	python main.py
 	git pull origin main
+
+
+(Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& c:\Users\RAHULSHARMA\Working\cohert_project\.venv\Scripts\Activate.ps1)
+
+
 

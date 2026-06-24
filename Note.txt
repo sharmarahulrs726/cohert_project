@@ -1,0 +1,12 @@
+Note :: Fully code not create by me 
+this code create agentic flows of code i have this code modfied as per my requirment.
+
+
+check Key is loading :
+python -c "from dotenv import load_dotenv; import os; load_dotenv(); k = os.getenv('ONLINE_LLM_KEY'); print('key exists:', k is not None, 'length:', len(k) if k else 0)"
+
+
+
+
+
+

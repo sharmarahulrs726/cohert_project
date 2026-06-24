@@ -1,18 +1,22 @@
 """
-Universal LLM analytical reviewer — uses any LLM provider to generate 
+Universal LLM analytical reviewer — uses any LLM provider via LangChain to generate 
 a discrepancy analysis report with deterministic fallback.
 
-Supports: OpenAI, OpenRouter, vLLM, Ollama, Local LLMs
+Supports: OpenAI, OpenRouter, vLLM, Ollama, Local LLMs, Anthropic, Google, etc.
+Uses: LangChain chat model abstraction
 """
 
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
-from openai import OpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.runnables import RunnableConfig
 
-from src.config import VLLM_BASE_URL, VLLM_API_KEY, MODEL_NAME
+from src.config import get_llm_config
+from src.prompts import INVESTIGATION_SYSTEM_PROMPT, STRICT_JSON_ENFORCER, build_investigation_messages
 
 logger = logging.getLogger(__name__)
 from src.models import CanonicalTaxCase
@@ -20,37 +24,8 @@ from src.discrepancies import Discrepancy, asdict
 
 
 # ---------------------------------------------------------------------------
-# Universal LLM Client Factory
+# Provider detection
 # ---------------------------------------------------------------------------
-def create_llm_client() -> OpenAI:
-    """
-    Create an OpenAI-compatible client for any LLM provider.
-    
-    Supports:
-    - OpenAI (api.openai.com)
-    - OpenRouter (openrouter.ai)
-    - vLLM (localhost:8000/v1)
-    - Ollama (localhost:11434/v1)
-    - Local LLMs (any OpenAI-compatible endpoint)
-    """
-    base_url = os.getenv("LLM_BASE_URL", VLLM_BASE_URL)
-    api_key = os.getenv("LLM_API_KEY", VLLM_API_KEY)
-    model = os.getenv("LLM_MODEL", MODEL_NAME)
-    
-    # Auto-detect provider and adjust settings
-    provider = _detect_provider(base_url)
-    
-    # Some providers don't need API keys
-    if provider == "ollama" and not api_key:
-        api_key = "ollama"
-    elif provider == "local" and not api_key:
-        api_key = "dummy"
-    
-    logger.info("LLM Provider: %s | Base URL: %s | Model: %s", provider, base_url, model)
-    
-    return OpenAI(base_url=base_url, api_key=api_key)
-
-
 def _detect_provider(base_url: str) -> str:
     """Detect LLM provider from base URL."""
     url_lower = base_url.lower()
@@ -70,16 +45,61 @@ def _detect_provider(base_url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Global client (lazy initialization)
+# LangChain chat model factory
 # ---------------------------------------------------------------------------
-_client: Optional[OpenAI] = None
+def _create_chat_model(
+    model: str,
+    temperature: float = 0.1,
+    response_format: Optional[Dict[str, Any]] = None,
+) -> Any:
+    """Create a LangChain chat model for the configured provider (fresh config each call)."""
+    cfg = get_llm_config()
+    base_url = cfg["base_url"]
+    api_key = cfg["api_key"]
+    provider = cfg["provider"]
+    resolved_model = model or cfg["model"]
+    print(base_url,resolved_model)
 
-def get_client() -> OpenAI:
-    """Get or create the LLM client."""
-    global _client
-    if _client is None:
-        _client = create_llm_client()
-    return _client
+    logger.info("LLM Provider: %s | Base URL: %s | Model: %s", provider, base_url, resolved_model)
+
+    # Ollama native (if using Ollama's native API)
+    if provider == "ollama":
+        from langchain_ollama import ChatOllama
+        ollama_base = base_url.rstrip("/").replace("/v1", "")
+        return ChatOllama(
+            model=resolved_model,
+            base_url=ollama_base,
+            temperature=temperature,
+            format="json" if response_format else None,
+        )
+
+    # OpenAI-compatible endpoints (OpenRouter, vLLM, local, OpenAI, custom)
+    from langchain_openai import ChatOpenAI
+    
+    if provider in ("ollama", "local") and not api_key:
+        api_key = "dummy" if provider == "local" else "ollama"
+    
+    if provider in ("openrouter", "openai", "custom") and not api_key:
+        raise ValueError(
+            "API key not found for remote LLM provider (%s). "
+            "Set ONLINE_LLM_KEY in your .env file or "
+            "OPENAI_API_KEY environment variable." % provider
+        )
+
+    chat_model = ChatOpenAI(
+        model=resolved_model,
+        base_url=base_url.rstrip("/") + "/v1" if not base_url.endswith("/v1") else base_url,
+        api_key=api_key,
+        temperature=temperature,
+        max_retries=2,
+        request_timeout=120,
+    )
+
+    # Bind response_format for JSON mode if supported
+    if response_format and response_format.get("type") == "json_object":
+        chat_model = chat_model.bind(response_format=response_format)
+
+    return chat_model
 
 
 # ---------------------------------------------------------------------------
@@ -214,33 +234,6 @@ def build_llm_messages(
                 "docling_json": doc.get("docling_json", {}),
             }
 
-    system_prompt = (
-        "You are a senior Indian Income Tax Officer with deep expertise in ITR "
-        "verification, TDS reconciliation, and tax compliance analysis. Your task is "
-        "to forensically analyse the tax documents provided below and identify critical "
-        "discrepancies, mismatch, or compliance issue that may warrant a scrutiny "
-        "notice under the Income Tax Act, 1961.\n\n"
-        "You have access to TWO sources of evidence:\n"
-        "1. PRE-COMPUTED DISCREPANCIES (Discrepancy_Register.json) — rule-based "
-        "comparisons between Form 16, AIS, and ITR fields (salary, TDS, interest, "
-        "dividend, securities, bank deposits vs total income). These are your primary "
-        "source of truth but may miss context.\n"
-        "2. RAW EXTRACTED DOCUMENTS (data_extraction.json) — complete sheet-by-sheet "
-        "data from every XLSX/DOCX (AIS: Summary, Part A-TDS, Part A2 Property, "
-        "Part C Tax Paid, Part E SFT; Form 16; ITR: all schedules). Use these for "
-        "independent forensic verification.\n\n"
-        "YOUR ANALYSIS MUST:\n"
-        "- Cross-reference EACH pre-computed discrepancy against the raw sheets to "
-        "confirm, refine, or reject it with specific cell/sheet references\n"
-        "- Identify ADDITIONAL discrepancies NOT caught by rules (e.g., property "
-        "income mismatch, TDS credit mismatch across quarters, SFT transaction "
-        "inconsistencies, deduction claim anomalies)\n"
-        "- Assess materiality per IT Act thresholds (₹50k general, ₹1L bank deposits)\n"
-        "- Recommend specific validation steps: document requests, third-party "
-        "verification, assessee questioning\n"
-        "- Output ONLY valid JSON matching the required schema"
-    )
-
     user_prompt = (
         "Forensically analyse this tax case. Cross-reference pre-computed discrepancies "
         "with raw extracted sheets. Identify all mismatches, compliance issues, and "
@@ -254,10 +247,9 @@ def build_llm_messages(
         }, ensure_ascii=False, indent=2, default=str)
     )
 
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
+    # delegate system prompt to prompts.py — returns [{role, content}] OpenAI-format dicts
+    # system_prompt = INVESTIGATION_SYSTEM_PROMPT + STRICT_JSON_ENFORCER (defined in prompts.py)
+    return build_investigation_messages(user_prompt)
 
 
 # ---------------------------------------------------------------------------
@@ -376,95 +368,48 @@ def run_vllm_review(
     Returns a dict conforming to :data:`LLM_OUTPUT_SCHEMA`.
     """
     try:
+        # build messages via prompts.py — produces system + user dicts with forensic persona
         messages = build_llm_messages(canonical_case, discrepancies, validation, extracted_docs)
         
-        # Override system prompt to FORCE strict JSON-only output
-        # Preserves the full forensic persona while enforcing JSON-only response
-        messages[0]["content"] = (
-            "You are a senior Indian Income Tax Officer with deep expertise in ITR "
-            "verification, TDS reconciliation, and tax compliance analysis. Your task is "
-            "to forensically analyse the tax documents provided below and identify critical "
-            "discrepancies, mismatch, or compliance issue that may warrant a scrutiny "
-            "notice under the Income Tax Act, 1961.\n\n"
-            "IMPORTANT: Output ONLY valid JSON matching the schema below. "
-            "NO reasoning, NO explanations, NO markdown, NO extra text. Just the JSON object.\n\n"
-            "Schema:\n"
-            "{\n"
-            "  \"case_summary\": {\n"
-            "    \"overall_risk\": \"low|medium|high\",\n"
-            "    \"material_discrepancy_count\": 0,\n"
-            "    \"manual_review_required\": true,\n"
-            "    \"notice_candidate\": true,\n"
-            "    \"summary_text\": \"string\"\n"
-            "  },\n"
-            "  \"findings\": [\n"
-            "    {\n"
-            "      \"finding_id\": \"string\",\n"
-            "      \"category\": \"string\",\n"
-            "      \"status\": \"confirmed|probable|uncertain\",\n"
-            "      \"materiality\": \"low|medium|high\",\n"
-            "      \"difference_summary\": \"string\",\n"
-            "      \"reasoning\": \"string\",\n"
-            "      \"source_support\": [\"string\"],\n"
-            "      \"sheet_references\": [\"string\"],\n"
-            "      \"manual_review_required\": true\n"
-            "    }\n"
-            "  ],\n"
-            "  \"investigation_narrative\": {\n"
-            "    \"facts_established\": [\"string\"],\n"
-            "    \"issues_observed\": [\"string\"],\n"
-            "    \"uncertainties\": [\"string\"],\n"
-            "    \"recommended_next_step\": \"no_action|manual_review|issue_notice\"\n"
-            "  },\n"
-            "  \"validation_steps\": [\n"
-            "    {\n"
-            "      \"step_id\": \"string\",\n"
-            "      \"description\": \"string\",\n"
-            "      \"priority\": \"high|medium|low\",\n"
-            "      \"responsible_party\": \"assessee|deductor|bank|registry|third_party\",\n"
-            "      \"document_requested\": \"string\",\n"
-            "      \"legal_basis\": \"string\"\n"
-            "    }\n"
-            "  ]\n"
-            "}\n\n"
-            "CRITICAL: Return ONLY the JSON object. No reasoning, no explanations, no text before/after.\n"
-            "Only recommend notice_candidate=true if there is a genuine tax discrepancy "
-            "that meets materiality thresholds per the Income Tax Act, 1961."
-        )
-        
-        # Try with response_format first (vLLM supports this)
-        response = None
+        # Convert to LangChain messages
+        lc_messages = []
+        for msg in messages:
+            if msg["role"] == "system":
+                lc_messages.append(SystemMessage(content=msg["content"]))
+            else:
+                lc_messages.append(HumanMessage(content=msg["content"]))
+
+        response_data = None
         for use_format in [True, False]:
             try:
-                kwargs = {
-                    "model": MODEL_NAME,
-                    "messages": messages,
-                    "temperature": 0.0,  # Zero temperature for deterministic JSON
-                }
+                chat_model = _create_chat_model(
+                    model=None,
+                    temperature=0.1,
+                    response_format={"type": "json_object"} if use_format else None,
+                )
                 
                 if use_format:
-                    kwargs["response_format"] = {"type": "json_object"}
+                    # Use JsonOutputParser for structured output
+                    parser = JsonOutputParser()
+                    chain = chat_model | parser
+                    content = chain.invoke(lc_messages)
+                else:
+                    response = chat_model.invoke(lc_messages)
+                    content = response.content
                 
-                client = get_client()
-                response = client.chat.completions.create(**kwargs)
+                response_data = {"choices": [{"message": {"content": content}}]}
                 break
             except Exception as fmt_error:
                 logger.debug("LLM call with response_format=%s failed: %s", use_format, fmt_error)
                 if not use_format:
                     raise
-        
-        if response is None:
+
+        if response_data is None:
             raise RuntimeError("All LLM call attempts failed")
-        
-        content = response.choices[0].message.content
-        
-        # Handle reasoning_content that vLLM sometimes includes
-        if isinstance(content, list):
-            content = "".join(
-                block.get("text", "")
-                for block in content
-                if isinstance(block, dict)
-            )
+
+        content = response_data["choices"][0]["message"]["content"]
+        if not content:
+            raise ValueError("Empty response from LLM")
         
         if not content or not content.strip():
             raise ValueError("Empty response from LLM")
@@ -494,7 +439,7 @@ def run_vllm_review(
             logger.warning("LLM response missing required keys: %s - using fallback", missing_keys)
             raise ValueError(f"Missing required keys: {missing_keys}")
         
-        logger.info("LLM review completed via API call (provider: %s)", _detect_provider(os.getenv("LLM_BASE_URL", VLLM_BASE_URL)))
+        logger.info("LLM review completed via API call (provider: %s)", _detect_provider(os.getenv("LLM_BASE_URL", os.getenv("VLLM_BASE_URL", "https://openrouter.ai/api/v1"))))
         return parsed
     except Exception as e:
         logger.warning("LLM not connected: %s — using deterministic fallback", e)
