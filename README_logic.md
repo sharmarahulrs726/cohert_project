@@ -23,6 +23,7 @@ identifying issues beyond rule-based detection.
 - [Output Files](#output-files)
 - [data_extraction.json](#data_extractionjson)
 - [LLM Review Flow](#llm-review-flow)
+- [Centralized Prompt Management](#centralized-prompt-management)
 - [Discrepancy Rules](#discrepancy-rules)
 - [Launcher Scripts](#launcher-scripts)
 - [Development](#development)
@@ -53,13 +54,14 @@ main.py                              # CLI entry point / orchestration
 │   ├── config.py                    # Paths, constants, template detection
 │   ├── utils.py                     # Shared helpers (hashing, decimals, imports)
 │   ├── models.py                    # Pydantic data models (CanonicalTaxCase, etc.)
+│   ├── prompts.py                   # ⭐ Centralized prompt registry (single source of truth)
 │   ├── case_discovery.py            # CaseManifest & discover_cases()
 │   ├── extraction.py                # Document extraction (all sheets from XLSX)
 │   ├── parsing.py                   # PAN/Name/AY regex & table parsing
 │   ├── mapping.py                   # Raw extraction -> canonical models
 │   ├── validation.py                # Data quality validation
 │   ├── discrepancies.py             # Discrepancy engine (rule-based)
-│   ├── llm_reviewer.py              # LLM forensic review + deterministic fallback
+│   ├── llm_reviewer.py              # LLM forensic review (prompts from prompts.py)
 │   ├── decision.py                  # Decision composer (notice / report)
 │   ├── document_gen.py              # DOCX template rendering + PDF conversion
 │   └── output.py                    # JSON output packaging (incl. data_extraction.json)
@@ -69,6 +71,18 @@ main.py                              # CLI entry point / orchestration
 ├── requirements.txt
 ├── run.sh                           # Linux/macOS launcher
 └── run.bat                          # Windows launcher
+```
+
+### Prompt Management Layer
+
+```
+src/prompts.py              ← ALL prompts (single source of truth)
+        ↓
+src/llm_reviewer.py         ← orchestration only (no hardcoded prompt text)
+        ↓
+LangChain (ChatOpenAI / ChatOllama)
+        ↓
+OpenRouter / vLLM / Ollama  ← LLM provider
 ```
 
 ---
@@ -92,9 +106,19 @@ Microsoft Word, or any system tool needed.
 The system tries all three methods in order and always falls back to the
 Python-only solution.
 
-### Optional but recommended
-- A running **vLLM** instance (e.g., with `Qwen3-14B`) for LLM-powered forensic review.
-  If unavailable, the system falls back to deterministic rule-based analysis.
+### LLM Provider (recommended for full capabilities)
+
+The system uses **LangChain** (`ChatOpenAI` / `ChatOllama`) to connect to any OpenAI-compatible endpoint:
+
+| Provider | URL | Auth |
+|----------|-----|------|
+| **OpenRouter** (default) | `https://openrouter.ai/api/v1` | `OPENAI_API_KEY` (API key required) |
+| **vLLM** | `http://localhost:8000/v1` | None (local) |
+| **Ollama** | `http://localhost:11434` | None (local) |
+| **OpenAI** | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
+| **Custom** | Any OpenAI-compatible endpoint | As required |
+
+If no LLM is available, the system falls back to deterministic rule-based analysis.
 
 ---
 
@@ -188,16 +212,67 @@ context variables include `assessee_name`, `pan`, `assessment_year`,
 
 ## Configuration
 
-Key configuration is in `src/config.py`:
+### LLM Configuration (Runtime-Evaluated)
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `VLLM_BASE_URL` | `http://localhost:8000/v1` | vLLM API endpoint |
-| `MODEL_NAME` | `Qwen3-14B` | LLM model name |
-| `VLLM_API_KEY` | `dummy` | API key for vLLM |
-| `LIBREOFFICE_CMD` | `soffice` (Windows) / `libreoffice` (Linux) | LibreOffice binary |
+LLM settings are fetched at runtime via `get_llm_config(force_reload=False)` in `src/config.py`.
+This means environment changes take effect on each call **without restarting Python**.
 
-Override via environment variables or by editing `src/config.py` directly.
+| Setting | Env Var (priority order) | Default | Description |
+|---------|--------------------------|---------|-------------|
+| Base URL | `LLM_BASE_URL` > `VLLM_BASE_URL` | `https://openrouter.ai/api/v1` | API endpoint |
+| API Key | `OPENAI_API_KEY` > `ONLINE_LLM_KEY` > `VLLM_API_KEY` | `None` | Authentication token |
+| Model | `LLM_MODEL` > `VLLM_MODEL_NAME` | `qwen/qwen3.5-9b` | Model name |
+
+**Provider auto-detection** inspects the base URL:
+
+| URL pattern | Provider | Default behavior |
+|-------------|----------|-----------------|
+| `openrouter` | OpenRouter | Requires valid API key |
+| `openai` | OpenAI | Requires valid API key |
+| `localhost:8000` | vLLM | Dummy key `"dummy"` |
+| `localhost:11434` | Ollama | Key set to `"ollama"`, auto-appends `/v1` |
+| Other | Custom | Requires user-supplied key |
+
+**Example `.env` file:**
+
+```env
+# OpenRouter (default)
+OPENAI_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Or override with explicit settings
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_MODEL=qwen/qwen3.5-9b
+
+# For local Ollama:
+# LLM_BASE_URL=http://localhost:11434/v1
+```
+
+### Legacy Backwards-Compat Constants
+
+The module also provides once-evaluated constants at import time:
+
+| Constant | Default |
+|----------|---------|
+| `VLLM_BASE_URL` | `https://openrouter.ai/api/v1` |
+| `MODEL_NAME` | `qwen/qwen3.5-9b` |
+| `VLLM_API_KEY` | From env |
+
+These are kept for callers that import at module level; `get_llm_config()` is preferred.
+
+### Template Configuration
+
+Templates are auto-detected from `sample/` in this priority order:
+
+| Template | Search Order |
+|----------|-------------|
+| Notice | `Notice_Template.docx` -> `notice.docx` -> `Notice u.s 133(6).docx` |
+| Report | `input/REPORT_TEMPLATE.docx` -> `sample/Tax_Investigation_Report_Template.docx` -> `sample/REPORT_TEMPLATE.docx` -> `sample/report.docx` |
+
+### Other Settings
+
+| Setting | Env Var | Default | Description |
+|---------|---------|---------|-------------|
+| LibreOffice | `LIBREOFFICE_CMD` | `soffice` (Win) / `libreoffice` (Linux) | PDF conversion binary |
 
 ### Template auto-detection
 
@@ -425,7 +500,16 @@ extracted_docs (all sheets)
                 └── raw_extracted_documents (full markdown + sheets)
                         │
                         ▼
-               LLM (vLLM) or deterministic fallback
+               build_investigation_messages()   ← src/prompts.py
+                        │
+                        ▼
+                _create_chat_model()             ← src/llm_reviewer.py (uses get_llm_config())
+                        │
+                        ▼
+                LangChain ChatOpenAI / ChatOllama
+                        │
+                        ▼
+                OpenRouter / vLLM / Ollama or deterministic fallback
                         │
                         ▼
                 LLM_Review.json
@@ -468,6 +552,48 @@ extracted_docs (all sheets)
 ```
 
 Responsible parties: `assessee`, `deductor`, `bank`, `registry`, `third_party`.
+
+---
+
+## Centralized Prompt Management
+
+The system uses an enterprise-grade **3-layer prompt architecture**:
+
+```
+src/prompts.py              ← ALL prompts (single source of truth)
+        ↓
+src/llm_reviewer.py         ← orchestration only (no hardcoded prompt text)
+        ↓
+LangChain (ChatOpenAI / ChatOllama)
+        ↓
+OpenRouter / vLLM / Ollama  ← LLM provider
+```
+
+### What Changed
+
+| Before (BAD) | After (CLEAN) |
+|--------------|---------------|
+| Prompts hardcoded inline in `llm_reviewer.py` | All prompts in `src/prompts.py` |
+| System prompt duplicated & overwritten in `run_vllm_review()` | Single definition via `build_investigation_messages()` |
+| Raw dict message construction | LangChain `SystemMessage` / `HumanMessage` |
+| Direct OpenAI SDK + httpx calls | LangChain `ChatOpenAI` / `ChatOllama` unified interface |
+| Static import-time config | Runtime `get_llm_config()` reads `.env` per call |
+| Difficult to tune without touching code | Edit `prompts.py` with zero code risk |
+
+### Prompt Registry (`src/prompts.py`)
+
+| Constant | Purpose |
+|----------|---------|
+| `INVESTIGATION_SYSTEM_PROMPT` | Forensic tax officer persona with full analysis instructions |
+| `STRICT_JSON_ENFORCER` | JSON-only output enforcer with schema definition |
+| `build_investigation_messages(user_prompt)` | Returns OpenAI-ready `[{role, content}]` dicts |
+
+### Benefits
+
+- **Easy prompt tuning** — edit `prompts.py` without touching business logic
+- **Cleaner LLM pipeline** — no duplicated or overwritten system prompts
+- **Production-safe** — no accidental prompt override bugs
+- **Extensible** — ready for A/B testing, versioning (v1/v2 prompts), experiment tracking
 
 ---
 
