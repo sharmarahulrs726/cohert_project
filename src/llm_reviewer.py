@@ -92,7 +92,7 @@ def _create_chat_model(
         api_key=api_key,
         temperature=temperature,
         max_retries=2,
-        request_timeout=120,
+        request_timeout=300,
     )
 
     # Bind response_format for JSON mode if supported

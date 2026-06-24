@@ -41,6 +41,7 @@ class LogCaptureHandler(logging.Handler):
 
 
 _capture_handler = LogCaptureHandler()
+_capture_handler.setLevel(logging.INFO)
 _capture_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
 logging.getLogger().addHandler(_capture_handler)
 

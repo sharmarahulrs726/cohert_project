@@ -19,9 +19,15 @@ from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Project root (src/config.py -> project root)
+# ---------------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ENV_PATH = PROJECT_ROOT / ".env"
+
+# ---------------------------------------------------------------------------
 # Default base paths (can be overridden via environment or direct assignment)
 # ---------------------------------------------------------------------------
-BASE_DIR = Path.cwd()
+BASE_DIR = PROJECT_ROOT
 SAMPLE_DIR = BASE_DIR / "sample"
 OUTPUT_DIR = BASE_DIR / "output"
 AUDIT_DIR = BASE_DIR / "audit"
@@ -30,24 +36,21 @@ AUDIT_DIR = BASE_DIR / "audit"
 # ---------------------------------------------------------------------------
 # LLM configuration (runtime-evaluated via get_llm_config())
 # ---------------------------------------------------------------------------
-def get_llm_config(force_reload: bool = False) -> dict:
+def get_llm_config(force_reload: bool = True) -> dict:
     """
     Get fresh LLM configuration from environment.
     
     Args:
-        force_reload: If True, force re-load .env file before reading.
+        force_reload: If True (default), force re-load .env file before reading.
         
     Returns:
         Dict with base_url, api_key, model, provider
     """
-    if force_reload:
-        load_dotenv(override=True)
-    else:
-        load_dotenv()  # safe to call multiple times; only loads if not loaded
+    load_dotenv(ENV_PATH, override=True)
     
     base_url = os.getenv("LLM_BASE_URL") or os.getenv("VLLM_BASE_URL") or "https://openrouter.ai/api/v1"
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("ONLINE_LLM_KEY") or os.getenv("VLLM_API_KEY")
-    model = os.getenv("LLM_MODEL") or os.getenv("VLLM_MODEL_NAME") 
+    model = os.getenv("LLM_MODEL") or os.getenv("VLLM_MODEL_NAME") or "qwen/qwen3.5-9b"
     # Provider detection
     url_lower = base_url.lower()
     if "openrouter" in url_lower:
@@ -80,9 +83,9 @@ def get_llm_config(force_reload: bool = False) -> dict:
 
 
 # Backward-compat constants (evaluated once at import; prefer get_llm_config())
-load_dotenv()
+load_dotenv(ENV_PATH)
 VLLM_BASE_URL = os.getenv("LLM_BASE_URL") or os.getenv("VLLM_BASE_URL") or "https://openrouter.ai/api/v1"
-MODEL_NAME = os.getenv("LLM_MODEL") or os.getenv("VLLM_MODEL_NAME")
+MODEL_NAME = os.getenv("LLM_MODEL") or os.getenv("VLLM_MODEL_NAME") or "qwen/qwen3.5-9b"
 VLLM_API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("ONLINE_LLM_KEY") or os.getenv("VLLM_API_KEY")
 
 OPENROUTER_TOP_N = 3

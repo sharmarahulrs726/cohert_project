@@ -35,6 +35,7 @@ nul
 SRS.ipynb
 
 # Logs
+logs/
 *.log
 
 # Environment
@@ -49,4 +50,3 @@ frontend/.vite/
 api/input/
 api/output/
 api/__pycache__/
-*.log

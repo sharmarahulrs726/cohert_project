@@ -18,6 +18,13 @@ if not exist ".venv\Scripts\python.exe" (
     )
     echo [INFO] Installing dependencies...
     call .venv\Scripts\pip.exe install -r requirements.txt
+)
+
+:: Ensure API dependencies are installed
+echo [INFO] Checking API dependencies...
+call .venv\Scripts\python.exe -c "import fastapi, uvicorn" 2>nul
+if errorlevel 1 (
+    echo [INFO] Installing API server dependencies...
     call .venv\Scripts\pip.exe install fastapi uvicorn python-multipart
 )
 
@@ -36,6 +43,14 @@ start "API Server" cmd /c ".venv\Scripts\python.exe -m uvicorn api.main:app --ho
 :: Wait for API to start
 timeout /t 3 /nobreak >nul
 
+:: Check if API is actually running
+echo [INFO] Verifying API server...
+call .venv\Scripts\python.exe -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=2); print('[OK] API is running')" 2>nul || (
+    echo [WARNING] API server not responding yet. Check the API Server window for errors.
+    echo [INFO] If the API window closed immediately, try running this manually:
+    echo        .venv\Scripts\python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+)
+
 :: Start frontend dev server
 echo [INFO] Starting frontend on http://localhost:5173...
 cd frontend
@@ -49,6 +64,6 @@ echo   Frontend:  http://localhost:5173
 echo   API Docs:  http://localhost:8000/docs
 echo ========================================
 echo.
-echo Close this window to stop both servers.
+echo If the frontend shows errors, check the API Server window for details.
 echo.
 pause

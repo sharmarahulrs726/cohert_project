@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -26,7 +27,17 @@ from api.services.case_processor import (
 from src.config import init_config
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
+
+log_dir = PROJECT_ROOT / "logs"
+log_dir.mkdir(exist_ok=True)
+log_filename = log_dir / f"api_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+_file_handler = logging.FileHandler(str(log_filename), encoding="utf-8")
+_file_handler.setLevel(logging.INFO)
+_file_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"))
+logging.getLogger().addHandler(_file_handler)
+logger.info("File logging initialized: %s", log_filename)
 
 init_config()
 

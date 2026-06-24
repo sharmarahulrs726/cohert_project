@@ -9,6 +9,7 @@ watch -n 1 rocm-smi
 
 
 python -m venv .venv
+python.exe -m pip install --upgrade pip
 source .venv/bin/activate
 
 python.exe -m pip install --upgrade pip
@@ -47,12 +48,13 @@ curl http://localhost:8000/v1/chat/completions \
   }'
 
 
+.env file ===>
+VLLM_BASE_URL="https://openrouter.ai/api/v1"
+VLLM_MODEL_NAME="qwen/qwen3-14b"
+ONLINE_LLM_KEY=
 
 
-
-
-pip install openpyxl
-
+--------------------------
 
 
 	python main.py
