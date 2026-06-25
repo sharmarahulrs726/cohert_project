@@ -28,10 +28,17 @@ ENV_PATH = PROJECT_ROOT / ".env"
 # Default base paths (can be overridden via environment or direct assignment)
 # ---------------------------------------------------------------------------
 BASE_DIR = PROJECT_ROOT
-SAMPLE_DIR = BASE_DIR / "sample"
-OUTPUT_DIR = BASE_DIR / "output"
-AUDIT_DIR = BASE_DIR / "audit"
 
+if os.environ.get("VERCEL"):
+    # Redirect all writes to Vercel's ephemeral, writable storage
+    SAMPLE_DIR = Path("/tmp/sample")
+    OUTPUT_DIR = Path("/tmp/output")
+    AUDIT_DIR = Path("/tmp/audit")
+else:
+    # Keep your original local file paths for development
+    SAMPLE_DIR = BASE_DIR / "sample"
+    OUTPUT_DIR = BASE_DIR / "output"
+    AUDIT_DIR = BASE_DIR / "audit"
 
 # ---------------------------------------------------------------------------
 # LLM configuration (runtime-evaluated via get_llm_config())
