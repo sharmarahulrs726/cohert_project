@@ -4,17 +4,13 @@ uvicorn[standard]>=0.27,<1.0
 python-multipart>=0.0.6
 pydantic>=2.0,<3.0
 
-# Core
+# Core Data
 pandas>=2.0,<3.0
 numpy>=1.24,<2.0
+python-dotenv
 
-# Direct CPU Wheel Links for Linux + Python 3.12 (Bypasses registry bugs)
-torch @ https://download.pytorch.org/whl/cpu/torch-2.3.1%2Bcpu-cp312-cp312-linux_x86_64.whl
-torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.18.1%2Bcpu-cp312-cp312-linux_x86_64.whl
-
-# LLM / AI
+# Cloud LLM / AI (Lightweight API Wrappers)
 langchain-openai>=0.2,<1.0
-langchain-ollama>=0.2,<1.0
 langchain-core>=0.3,<1.0
 
 # Document generation
@@ -22,11 +18,6 @@ python-docx>=1.0,<2.0
 docxtpl>=0.16,<1.0
 openpyxl>=3.0,<4.0
 xlrd>=2.0,<3.0
-python-dotenv
 
-# PDF generation
-docx2pdf>=0.1,<1.0
+# PDF generation (Ensuring no heavy local ML tools are bundled)
 fpdf2>=2.8,<3.0
-
-# Document AI
-#docling>=2.0,<3.0
