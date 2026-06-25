@@ -23,7 +23,7 @@ except ImportError:
 from src.models import CanonicalTaxCase
 from src.discrepancies import Discrepancy, asdict
 from src.decision import DecisionResult
-from src.config import LIBREOFFICE_CMD
+from src.paths import LIBREOFFICE_CMD
 
 
 # ---------------------------------------------------------------------------

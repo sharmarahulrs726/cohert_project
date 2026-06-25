@@ -61,6 +61,7 @@ from src.config import (
     BASE_DIR, INPUT_DIR, SAMPLE_DIR, OUTPUT_DIR, AUDIT_DIR,
     NOTICE_TEMPLATE_PATH, REPORT_TEMPLATE_PATH, init_config
 )
+from src.paths import IS_VERCEL
 
 # Bootstrap config (normally done by main())
 init_config()

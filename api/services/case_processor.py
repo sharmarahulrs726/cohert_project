@@ -11,7 +11,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.case_discovery import CaseManifest, asdict
-from src.config import init_config, SAMPLE_DIR
+from src.config import init_config
+from src.paths import SAMPLE_DIR, API_INPUT_BASE, API_OUTPUT_BASE, LOG_DIR
 from src.discrepancies import Discrepancy
 from src.extraction import extract_with_docling
 from src.mapping import build_canonical_case
@@ -27,16 +28,6 @@ from src.document_gen import (
 from src.output import write_json, package_case_outputs
 
 logger = logging.getLogger(__name__)
-
-API_DIR = Path(__file__).resolve().parent.parent
-# Check if running in Vercel's read-only environment
-if os.environ.get("VERCEL"):
-    INPUT_BASE = Path("/tmp/input")
-    OUTPUT_BASE = Path("/tmp/output")
-else:
-    # Keep your original base paths for local development
-    INPUT_BASE = API_DIR / "input"
-    OUTPUT_BASE = API_DIR / "output"
 
 CAPTURED_LOGS: List[str] = []
 
@@ -72,18 +63,18 @@ def _write_progress(session_id: str, step: str, progress: int, message: str):
 
 def create_session() -> str:
     session_id = uuid.uuid4().hex[:12]
-    (INPUT_BASE / session_id).mkdir(parents=True, exist_ok=True)
-    (OUTPUT_BASE / session_id).mkdir(parents=True, exist_ok=True)
-    (INPUT_BASE / session_id / "templates").mkdir(parents=True, exist_ok=True)
+    (API_INPUT_BASE / session_id).mkdir(parents=True, exist_ok=True)
+    (API_OUTPUT_BASE / session_id).mkdir(parents=True, exist_ok=True)
+    (API_INPUT_BASE / session_id / "templates").mkdir(parents=True, exist_ok=True)
     return session_id
 
 
 def get_session_input_dir(session_id: str) -> Path:
-    return INPUT_BASE / session_id
+    return API_INPUT_BASE / session_id
 
 
 def get_session_output_dir(session_id: str) -> Path:
-    return OUTPUT_BASE / session_id
+    return API_OUTPUT_BASE / session_id
 
 
 def check_uploaded_files(session_id: str) -> List[str]:

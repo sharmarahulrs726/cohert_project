@@ -25,20 +25,14 @@ from api.services.case_processor import (
     detect_template_paths, CAPTURED_LOGS, _write_progress,
 )
 from src.config import init_config
+from src.paths import LOG_DIR
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
-# If running on Vercel, use the writable /tmp directory; otherwise, use your PROJECT_ROOT
-if os.environ.get("VERCEL") or os.environ.get("NOW_REGION"):
-    log_dir = Path("/tmp/logs")
-else:
-    log_dir = PROJECT_ROOT / "logs"
-
-# This will now succeed on both your local machine and Vercel!
-log_dir.mkdir(exist_ok=True)
-log_filename = log_dir / f"api_log_{datetime.now().strftime('%Y-%m-%d_%H')}.log"
+LOG_DIR.mkdir(exist_ok=True)
+log_filename = LOG_DIR / f"api_log_{datetime.now().strftime('%Y-%m-%d_%H')}.log"
 _file_handler = logging.FileHandler(str(log_filename), encoding="utf-8")
 _file_handler.setLevel(logging.INFO)
 _file_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"))
@@ -76,18 +70,9 @@ def _detect_file_type(filename: str) -> Optional[str]:
 
 @app.on_event("startup")
 async def startup():
-    import os
-    api_dir = Path(__file__).resolve().parent
-    # Check if running in Vercel's read-only environment
-    if os.environ.get("VERCEL"):
-        input_dir = Path("/tmp/input")
-        output_dir = Path("/tmp/output")
-    else:
-        input_dir = api_dir / "input"
-        output_dir = api_dir / "output"
-    # Now these will safely create directories anywhere
-    input_dir.mkdir(exist_ok=True)
-    output_dir.mkdir(exist_ok=True)
+    from src.paths import API_INPUT_BASE, API_OUTPUT_BASE
+    API_INPUT_BASE.mkdir(parents=True, exist_ok=True)
+    API_OUTPUT_BASE.mkdir(parents=True, exist_ok=True)
     logger.info("API directories initialized")
 
 @app.get("/api/health")
