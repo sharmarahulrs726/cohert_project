@@ -30,7 +30,13 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
-log_dir = PROJECT_ROOT / "logs"
+# If running on Vercel, use the writable /tmp directory; otherwise, use your PROJECT_ROOT
+if os.environ.get("VERCEL"):
+    log_dir = Path("/tmp/logs")
+else:
+    log_dir = PROJECT_ROOT / "logs"
+
+# This will now succeed on both your local machine and Vercel!
 log_dir.mkdir(exist_ok=True)
 log_filename = log_dir / f"api_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
 _file_handler = logging.FileHandler(str(log_filename), encoding="utf-8")
