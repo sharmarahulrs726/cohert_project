@@ -76,11 +76,19 @@ def _detect_file_type(filename: str) -> Optional[str]:
 
 @app.on_event("startup")
 async def startup():
+    import os
     api_dir = Path(__file__).resolve().parent
-    (api_dir / "input").mkdir(exist_ok=True)
-    (api_dir / "output").mkdir(exist_ok=True)
+    # Check if running in Vercel's read-only environment
+    if os.environ.get("VERCEL"):
+        input_dir = Path("/tmp/input")
+        output_dir = Path("/tmp/output")
+    else:
+        input_dir = api_dir / "input"
+        output_dir = api_dir / "output"
+    # Now these will safely create directories anywhere
+    input_dir.mkdir(exist_ok=True)
+    output_dir.mkdir(exist_ok=True)
     logger.info("API directories initialized")
-
 
 @app.get("/api/health")
 async def health():
