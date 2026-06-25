@@ -34,6 +34,8 @@ if os.environ.get("VERCEL"):
     SAMPLE_DIR = Path("/tmp/sample")
     OUTPUT_DIR = Path("/tmp/output")
     AUDIT_DIR = Path("/tmp/audit")
+    # Read-only path stays in your repository files so Vercel can read your templates
+    SAMPLE_DIR = BASE_DIR / "sample"  # If your 'sample' folder is inside 'api', change to: BASE_DIR / "api" / "sample"
 else:
     # Keep your original local file paths for development
     SAMPLE_DIR = BASE_DIR / "sample"
