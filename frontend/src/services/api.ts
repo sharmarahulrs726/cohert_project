@@ -11,8 +11,8 @@ import type {
 } from '../types';
 
 const api = axios.create({
-  baseURL: '/api',
-  timeout: 300000, // 5 min for processing
+  baseURL: import.meta.env.VITE_API_URL || '/api',
+  timeout: 300000,
 });
 
 export async function initSession(): Promise<SessionInit> {
