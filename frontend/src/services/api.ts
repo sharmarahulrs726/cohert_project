@@ -16,6 +16,7 @@ const api = axios.create({
   timeout: 300000,
 });
 
+
 export async function initSession(): Promise<SessionInit> {
   const { data } = await api.post('/session/init');
   return data;
