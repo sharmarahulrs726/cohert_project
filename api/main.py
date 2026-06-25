@@ -31,14 +31,14 @@ logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 # If running on Vercel, use the writable /tmp directory; otherwise, use your PROJECT_ROOT
-if os.environ.get("VERCEL"):
+if os.environ.get("VERCEL") or os.environ.get("NOW_REGION"):
     log_dir = Path("/tmp/logs")
 else:
     log_dir = PROJECT_ROOT / "logs"
 
 # This will now succeed on both your local machine and Vercel!
 log_dir.mkdir(exist_ok=True)
-log_filename = log_dir / f"api_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+log_filename = log_dir / f"api_log_{datetime.now().strftime('%Y-%m-%d_%H')}.log"
 _file_handler = logging.FileHandler(str(log_filename), encoding="utf-8")
 _file_handler.setLevel(logging.INFO)
 _file_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"))
