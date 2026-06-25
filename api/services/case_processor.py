@@ -29,8 +29,14 @@ from src.output import write_json, package_case_outputs
 logger = logging.getLogger(__name__)
 
 API_DIR = Path(__file__).resolve().parent.parent
-INPUT_BASE = API_DIR / "input"
-OUTPUT_BASE = API_DIR / "output"
+# Check if running in Vercel's read-only environment
+if os.environ.get("VERCEL"):
+    INPUT_BASE = Path("/tmp/input")
+    OUTPUT_BASE = Path("/tmp/output")
+else:
+    # Keep your original base paths for local development
+    INPUT_BASE = API_DIR / "input"
+    OUTPUT_BASE = API_DIR / "output"
 
 CAPTURED_LOGS: List[str] = []
 
