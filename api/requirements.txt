@@ -1,8 +1,3 @@
-# Force CPU-only binaries for PyTorch (Saves ~4.5 GB)
---extra-index-url https://download.pytorch.org/whl/cpu
-torch>=2.0.0
-torchvision>=0.15.0
-
 # Web Server
 fastapi>=0.109,<1.0
 uvicorn[standard]>=0.27,<1.0
@@ -12,6 +7,10 @@ pydantic>=2.0,<3.0
 # Core
 pandas>=2.0,<3.0
 numpy>=1.24,<2.0
+
+# Direct CPU Wheel Links for Linux + Python 3.12 (Bypasses registry bugs)
+torch @ https://download.pytorch.org/whl/cpu/torch-2.3.1%2Bcpu-cp312-cp312-linux_x86_64.whl
+torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.18.1%2Bcpu-cp312-cp312-linux_x86_64.whl
 
 # LLM / AI
 langchain-openai>=0.2,<1.0
@@ -25,9 +24,9 @@ openpyxl>=3.0,<4.0
 xlrd>=2.0,<3.0
 python-dotenv
 
-# PDF generation (fallback chain: LibreOffice → docx2pdf → fpdf2)
+# PDF generation
 docx2pdf>=0.1,<1.0
 fpdf2>=2.8,<3.0
 
-# Document AI 
+# Document AI
 docling>=2.0,<3.0
