@@ -1,17 +1,14 @@
-# Force CPU-only binaries for PyTorch (Saves ~4.5 GB)
---extra-index-url https://download.pytorch.org/whl/cpu
-torch>=2.0.0
-torchvision>=0.15.0
-
-# Web Server
 fastapi>=0.109,<1.0
 uvicorn[standard]>=0.27,<1.0
 python-multipart>=0.0.6
 pydantic>=2.0,<3.0
 
+
+
 # Core
 pandas>=2.0,<3.0
 numpy>=1.24,<2.0
+pydantic>=2.0,<3.0
 
 # LLM / AI
 langchain-openai>=0.2,<1.0
@@ -23,11 +20,13 @@ python-docx>=1.0,<2.0
 docxtpl>=0.16,<1.0
 openpyxl>=3.0,<4.0
 xlrd>=2.0,<3.0
-python-dotenv
 
 # PDF generation (fallback chain: LibreOffice → docx2pdf → fpdf2)
 docx2pdf>=0.1,<1.0
 fpdf2>=2.8,<3.0
 
-# Document AI 
+# Document AI (optional — graceful fallback if missing)
 docling>=2.0,<3.0
+openpyxl
+python-dotenv
+

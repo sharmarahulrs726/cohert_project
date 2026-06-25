@@ -9,4 +9,6 @@ python -c "from dotenv import load_dotenv; import os; load_dotenv(); k = os.gete
 
 
 
+My .veve size is : 1.17 GB 
+vercel support 500 MB only 
 
