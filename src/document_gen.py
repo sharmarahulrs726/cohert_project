@@ -23,7 +23,7 @@ except ImportError:
 from src.models import CanonicalTaxCase
 from src.discrepancies import Discrepancy, asdict
 from src.decision import DecisionResult
-from src.config import LIBREOFFICE_CMD
+from src.paths import LIBREOFFICE_CMD
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +247,8 @@ def _find_or_download_unicode_font(pdf: Any) -> Optional[str]:
 
     # ── 2. Download DejaVuSans (open source / public domain) ──
     font_dir = Path.home() / ".tax_investigation" / "fonts"
-    font_dir.mkdir(parents=True, exist_ok=True)
+    from src.utils import ensure_dir
+    ensure_dir(font_dir)
     dejavu_path = font_dir / "DejaVuSans.ttf"
 
     if not dejavu_path.exists():

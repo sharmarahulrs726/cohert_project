@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import type { NoticeData } from '../types';
 import * as apiService from '../services/api';
+import mammoth from 'mammoth';
 
 interface NoticeViewerProps {
   sessionId: string;
@@ -15,6 +16,10 @@ export const NoticeViewer: React.FC<NoticeViewerProps> = ({ sessionId, onNewCase
   const [error, setError] = useState<string | null>(null);
   const [pdfError, setPdfError] = useState(false);
   const [activeTab, setActiveTab] = useState<FileTab>('docx');
+  const [docxHtml, setDocxHtml] = useState<string | null>(null);
+  const [docxLoading, setDocxLoading] = useState(false);
+  const [docxError, setDocxError] = useState<string | null>(null);
+  const docxConverted = useRef(false);
 
   useEffect(() => {
     const fetchNotice = async () => {
@@ -36,6 +41,32 @@ export const NoticeViewer: React.FC<NoticeViewerProps> = ({ sessionId, onNewCase
     };
     fetchNotice();
   }, [sessionId]);
+
+  useEffect(() => {
+    if (activeTab !== 'docx' || docxConverted.current) return;
+    const hasDocx = noticeData?.notice_files?.['Notice.docx'] != null;
+    if (!hasDocx) return;
+    docxConverted.current = true;
+
+    const convertDocx = async () => {
+      setDocxLoading(true);
+      setDocxError(null);
+      try {
+        const url = apiService.getFileUrl(sessionId, 'Notice.docx');
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Failed to fetch DOCX');
+        const arrayBuffer = await response.arrayBuffer();
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        setDocxHtml(result.value);
+      } catch (err: unknown) {
+        setDocxError(err instanceof Error ? err.message : 'Failed to convert DOCX');
+        docxConverted.current = false;
+      } finally {
+        setDocxLoading(false);
+      }
+    };
+    convertDocx();
+  }, [activeTab, noticeData, sessionId]);
 
   if (loading) {
     return (
@@ -136,24 +167,50 @@ export const NoticeViewer: React.FC<NoticeViewerProps> = ({ sessionId, onNewCase
         <div className="bg-white rounded-b-lg rounded-tr-lg shadow-lg border border-t-0 p-4">
           {/* DOCX Tab */}
           {activeTab === 'docx' && hasDocx && (
-            <div className="text-center py-8">
-              <svg className="w-20 h-20 mx-auto mb-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <p className="text-gray-700 mb-2 font-medium">Notice.docx (Editable)</p>
-              <p className="text-gray-500 text-sm mb-6">
-                Open in Word to review and edit before finalizing.
-              </p>
-              <a
-                href={`/api/files/${sessionId}/Notice.docx`}
-                download
-                className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow font-semibold"
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Download Notice.docx
-              </a>
+            <div>
+              {docxLoading && (
+                <div className="flex items-center justify-center py-16">
+                  <div className="animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent" />
+                  <span className="ml-3 text-gray-500">Converting DOCX to preview...</span>
+                </div>
+              )}
+              {docxError && (
+                <div className="text-center py-8">
+                  <p className="text-red-500 mb-2">Could not preview DOCX: {docxError}</p>
+                  <a
+                    href={apiService.getFileUrl(sessionId, 'Notice.docx')}
+                    download
+                    className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow font-semibold"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Download Notice.docx
+                  </a>
+                </div>
+              )}
+              {docxHtml && !docxLoading && (
+                <div>
+                  <div className="flex justify-end mb-2">
+                    <a
+                      href={apiService.getFileUrl(sessionId, 'Notice.docx')}
+                      download
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      Download DOCX
+                    </a>
+                  </div>
+                  <div
+                    className="prose prose-sm max-w-none border rounded-lg p-6 bg-white"
+                    dangerouslySetInnerHTML={{ __html: docxHtml }}
+                  />
+                </div>
+              )}
+              {!docxLoading && !docxHtml && !docxError && (
+                <div className="flex items-center justify-center py-16">
+                  <div className="animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent" />
+                </div>
+              )}
             </div>
           )}
 
@@ -162,7 +219,7 @@ export const NoticeViewer: React.FC<NoticeViewerProps> = ({ sessionId, onNewCase
             <div>
               <div className="flex justify-end items-center mb-2">
                 <a
-                  href={`/api/files/${sessionId}/Notice.pdf`}
+                  href={apiService.getFileUrl(sessionId, 'Notice.pdf')}
                   download
                   className="text-sm text-blue-600 hover:underline"
                 >
@@ -171,7 +228,7 @@ export const NoticeViewer: React.FC<NoticeViewerProps> = ({ sessionId, onNewCase
               </div>
               <div className="h-[700px] border rounded-lg overflow-hidden bg-gray-100">
                 <object
-                  data={`/api/files/${sessionId}/Notice.pdf`}
+                  data={apiService.getFileUrl(sessionId, 'Notice.pdf')}
                   type="application/pdf"
                   className="w-full h-full"
                   onError={() => setPdfError(true)}
@@ -183,7 +240,7 @@ export const NoticeViewer: React.FC<NoticeViewerProps> = ({ sessionId, onNewCase
                       </svg>
                       <p className="text-gray-500 mb-4">PDF preview not available in your browser.</p>
                       <a
-                        href={`/api/files/${sessionId}/Notice.pdf`}
+                        href={apiService.getFileUrl(sessionId, 'Notice.pdf')}
                         download
                         className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                       >
@@ -206,7 +263,7 @@ export const NoticeViewer: React.FC<NoticeViewerProps> = ({ sessionId, onNewCase
                 Your browser cannot display this PDF inline. Download it instead.
               </p>
               <a
-                href={`/api/files/${sessionId}/Notice.pdf`}
+                href={apiService.getFileUrl(sessionId, 'Notice.pdf')}
                 download
                 className="inline-flex items-center px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 shadow font-semibold"
               >
@@ -284,7 +341,7 @@ export const NoticeViewer: React.FC<NoticeViewerProps> = ({ sessionId, onNewCase
         <div className="flex justify-center gap-4 mt-6 flex-wrap">
           {hasDocx && (
             <a
-              href={`/api/files/${sessionId}/Notice.docx`}
+              href={apiService.getFileUrl(sessionId, 'Notice.docx')}
               download
               className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow font-semibold"
             >
@@ -296,7 +353,7 @@ export const NoticeViewer: React.FC<NoticeViewerProps> = ({ sessionId, onNewCase
           )}
           {hasPdf && (
             <a
-              href={`/api/files/${sessionId}/Notice.pdf`}
+              href={apiService.getFileUrl(sessionId, 'Notice.pdf')}
               download
               className="flex items-center px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 shadow font-semibold"
             >

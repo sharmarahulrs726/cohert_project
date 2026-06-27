@@ -10,10 +10,13 @@ import type {
   ProgressData,
 } from '../types';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'https://rahulsharma713096-hf-cohort.hf.space/api';
+
 const api = axios.create({
-  baseURL: '/api',
-  timeout: 300000, // 5 min for processing
+  baseURL: API_BASE,
+  timeout: 300000,
 });
+
 
 export async function initSession(): Promise<SessionInit> {
   const { data } = await api.post('/session/init');
@@ -83,5 +86,5 @@ export async function getProgress(sessionId: string): Promise<ProgressData> {
 }
 
 export function getFileUrl(sessionId: string, filename: string): string {
-  return `/api/files/${sessionId}/${filename}`;
+  return `${API_BASE}/files/${sessionId}/${filename}`;
 }

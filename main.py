@@ -310,7 +310,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     init_config()
 
     # Now import the config values AFTER init_config() has set them
-    from src.config import INPUT_DIR, NOTICE_TEMPLATE_PATH, REPORT_TEMPLATE_PATH, OUTPUT_DIR
+    from src.config import INPUT_DIR, NOTICE_TEMPLATE_PATH, REPORT_TEMPLATE_PATH
+    from src.paths import OUTPUT_DIR
 
     # Override input directory if provided
     input_dir = Path(args.input) if args.input else INPUT_DIR

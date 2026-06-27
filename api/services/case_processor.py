@@ -11,7 +11,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.case_discovery import CaseManifest, asdict
-from src.config import init_config, SAMPLE_DIR
+from src.config import init_config
+from src.paths import SAMPLE_DIR, API_INPUT_BASE, API_OUTPUT_BASE, LOG_DIR
 from src.discrepancies import Discrepancy
 from src.extraction import extract_with_docling
 from src.mapping import build_canonical_case
@@ -27,10 +28,6 @@ from src.document_gen import (
 from src.output import write_json, package_case_outputs
 
 logger = logging.getLogger(__name__)
-
-API_DIR = Path(__file__).resolve().parent.parent
-INPUT_BASE = API_DIR / "input"
-OUTPUT_BASE = API_DIR / "output"
 
 CAPTURED_LOGS: List[str] = []
 
@@ -65,19 +62,20 @@ def _write_progress(session_id: str, step: str, progress: int, message: str):
 
 
 def create_session() -> str:
+    from src.utils import ensure_dir
     session_id = uuid.uuid4().hex[:12]
-    (INPUT_BASE / session_id).mkdir(parents=True, exist_ok=True)
-    (OUTPUT_BASE / session_id).mkdir(parents=True, exist_ok=True)
-    (INPUT_BASE / session_id / "templates").mkdir(parents=True, exist_ok=True)
+    ensure_dir(API_INPUT_BASE / session_id)
+    ensure_dir(API_OUTPUT_BASE / session_id)
+    ensure_dir(API_INPUT_BASE / session_id / "templates")
     return session_id
 
 
 def get_session_input_dir(session_id: str) -> Path:
-    return INPUT_BASE / session_id
+    return API_INPUT_BASE / session_id
 
 
 def get_session_output_dir(session_id: str) -> Path:
-    return OUTPUT_BASE / session_id
+    return API_OUTPUT_BASE / session_id
 
 
 def check_uploaded_files(session_id: str) -> List[str]:
@@ -191,7 +189,8 @@ def process_case_wrapper(
     notice_template: Optional[Path],
     report_template: Optional[Path],
 ) -> Dict[str, Any]:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    from src.utils import ensure_dir
+    ensure_dir(output_dir)
 
     _write_progress(session_id, "extracting", 15, "Extracting sheets from Form16, AIS, ITR...")
     extracted_docs = {

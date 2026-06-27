@@ -58,8 +58,6 @@ def _create_chat_model(
     api_key = cfg["api_key"]
     provider = cfg["provider"]
     resolved_model = model or cfg["model"]
-    print(base_url,resolved_model)
-
     logger.info("LLM Provider: %s | Base URL: %s | Model: %s", provider, base_url, resolved_model)
 
     # Ollama native (if using Ollama's native API)
@@ -86,13 +84,14 @@ def _create_chat_model(
             "OPENAI_API_KEY environment variable." % provider
         )
 
+    timeout = int(os.getenv("LLM_TIMEOUT", "120"))
     chat_model = ChatOpenAI(
         model=resolved_model,
         base_url=base_url.rstrip("/") + "/v1" if not base_url.endswith("/v1") else base_url,
         api_key=api_key,
         temperature=temperature,
-        max_retries=2,
-        request_timeout=300,
+        max_retries=1,
+        request_timeout=timeout,
     )
 
     # Bind response_format for JSON mode if supported
@@ -379,58 +378,67 @@ def run_vllm_review(
             else:
                 lc_messages.append(HumanMessage(content=msg["content"]))
 
+        cfg = get_llm_config()
+        primary_model = cfg["model"]
+        fallback_model = os.getenv("LLM_FALLBACK_MODEL", "qwen/qwen3.5-9b")
         response_data = None
-        for use_format in [True, False]:
-            try:
-                chat_model = _create_chat_model(
-                    model=None,
-                    temperature=0.1,
-                    response_format={"type": "json_object"} if use_format else None,
-                )
-                
-                if use_format:
-                    # Use JsonOutputParser for structured output
-                    parser = JsonOutputParser()
-                    chain = chat_model | parser
-                    content = chain.invoke(lc_messages)
-                else:
-                    response = chat_model.invoke(lc_messages)
-                    content = response.content
-                
-                response_data = {"choices": [{"message": {"content": content}}]}
+        succeeded_model = None
+        models_to_try = [primary_model, fallback_model]
+        for model_attempt in models_to_try:
+            for use_format in [True, False]:
+                try:
+                    chat_model = _create_chat_model(
+                        model=model_attempt,
+                        temperature=0.1,
+                        response_format={"type": "json_object"} if use_format else None,
+                    )
+                    
+                    if use_format:
+                        parser = JsonOutputParser()
+                        chain = chat_model | parser
+                        content = chain.invoke(lc_messages)
+                    else:
+                        response = chat_model.invoke(lc_messages)
+                        content = response.content
+                    
+                    response_data = {"choices": [{"message": {"content": content}}]}
+                    succeeded_model = model_attempt
+                    break
+                except Exception as fmt_error:
+                    logger.warning("LLM call model=%s response_format=%s failed: %s",
+                                   model_attempt, use_format, fmt_error)
+                    if not use_format:
+                        continue
+            if response_data is not None:
                 break
-            except Exception as fmt_error:
-                logger.debug("LLM call with response_format=%s failed: %s", use_format, fmt_error)
-                if not use_format:
-                    raise
 
         if response_data is None:
-            raise RuntimeError("All LLM call attempts failed")
-
+            raise RuntimeError("All LLM models failed")
         content = response_data["choices"][0]["message"]["content"]
         if not content:
             raise ValueError("Empty response from LLM")
-        
-        if not content or not content.strip():
-            raise ValueError("Empty response from LLM")
-        
-        # Extract JSON if wrapped in markdown or has extra text
-        content = content.strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
-        
-        # Find JSON object boundaries if extra text present
-        first_brace = content.find("{")
-        last_brace = content.rfind("}")
-        if first_brace >= 0 and last_brace > first_brace:
-            content = content[first_brace:last_brace+1]
-        
-        parsed = json.loads(content)
+
+        # If content is already a dict (from JsonOutputParser), use it directly
+        if isinstance(content, dict):
+            parsed = content
+        elif isinstance(content, str):
+            if not content or not content.strip():
+                raise ValueError("Empty response from LLM")
+            content = content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+            first_brace = content.find("{")
+            last_brace = content.rfind("}")
+            if first_brace >= 0 and last_brace > first_brace:
+                content = content[first_brace:last_brace+1]
+            parsed = json.loads(content)
+        else:
+            raise ValueError(f"Unexpected content type: {type(content)}")
         
         # Validate required keys exist
         required_keys = ["case_summary", "findings", "investigation_narrative", "validation_steps"]
@@ -439,7 +447,9 @@ def run_vllm_review(
             logger.warning("LLM response missing required keys: %s - using fallback", missing_keys)
             raise ValueError(f"Missing required keys: {missing_keys}")
         
-        logger.info("LLM review completed via API call (provider: %s)", _detect_provider(os.getenv("LLM_BASE_URL", os.getenv("VLLM_BASE_URL", "https://openrouter.ai/api/v1"))))
+        logger.info("LLM review completed via API call (model: %s, provider: %s)",
+                     succeeded_model,
+                     _detect_provider(os.getenv("LLM_BASE_URL", os.getenv("VLLM_BASE_URL", "https://openrouter.ai/api/v1"))))
         return parsed
     except Exception as e:
         logger.warning("LLM not connected: %s — using deterministic fallback", e)

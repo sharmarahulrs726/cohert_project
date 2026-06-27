@@ -25,14 +25,14 @@ from api.services.case_processor import (
     detect_template_paths, CAPTURED_LOGS, _write_progress,
 )
 from src.config import init_config
+from src.paths import LOG_DIR
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
-log_dir = PROJECT_ROOT / "logs"
-log_dir.mkdir(exist_ok=True)
-log_filename = log_dir / f"api_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+LOG_DIR.mkdir(exist_ok=True)
+log_filename = LOG_DIR / f"api_log_{datetime.now().strftime('%Y-%m-%d_%H')}.log"
 _file_handler = logging.FileHandler(str(log_filename), encoding="utf-8")
 _file_handler.setLevel(logging.INFO)
 _file_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"))
@@ -41,11 +41,17 @@ logger.info("File logging initialized: %s", log_filename)
 
 init_config()
 
+
 app = FastAPI(title="Tax Investigation API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://hffrotend-n2ey08i61-peronsal-rsjald.vercel.app",
+        "https://rahulsharma713096-hf-cohort.hf.space", # Your exact Hugging Face production space
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,11 +76,11 @@ def _detect_file_type(filename: str) -> Optional[str]:
 
 @app.on_event("startup")
 async def startup():
-    api_dir = Path(__file__).resolve().parent
-    (api_dir / "input").mkdir(exist_ok=True)
-    (api_dir / "output").mkdir(exist_ok=True)
-    logger.info("API directories initialized")
-
+    from src.paths import API_INPUT_BASE, API_OUTPUT_BASE
+    from src.utils import ensure_dir
+    ensure_dir(API_INPUT_BASE)
+    ensure_dir(API_OUTPUT_BASE)
+    logger.info("API directories initialized: input=%s, output=%s", API_INPUT_BASE, API_OUTPUT_BASE)
 
 @app.get("/api/health")
 async def health():
@@ -129,7 +135,8 @@ async def upload_template(session_id: str, template_type: str = Form(...), file:
         raise HTTPException(400, "template_type must be 'report' or 'notice'")
 
     tpl_dir = session_dir / "templates"
-    tpl_dir.mkdir(parents=True, exist_ok=True)
+    from src.utils import ensure_dir
+    ensure_dir(tpl_dir)
     dest = tpl_dir / f"{template_type}_template.docx"
     content = await file.read()
     dest.write_bytes(content)
@@ -376,6 +383,38 @@ async def serve_file(session_id: str, filename: str):
 async def get_logs(session_id: str, offset: int = Query(0, ge=0)):
     logs = CAPTURED_LOGS[offset:]
     return JSONResponse(content={"logs": logs, "total": len(CAPTURED_LOGS)})
+
+
+@app.get("/api/logs")
+async def get_runtime_logs(offset: int = Query(0, ge=0), tail: int = Query(0, ge=0)):
+    logs = CAPTURED_LOGS[offset:]
+    result = {
+        "logs": logs if not tail else CAPTURED_LOGS[-tail:],
+        "total": len(CAPTURED_LOGS),
+        "offset": offset,
+    }
+    log_file = Path(log_filename)
+    if log_file.exists():
+        try:
+            file_logs = log_file.read_text(encoding="utf-8").splitlines()
+            result["file_logs"] = file_logs[-200:]
+        except Exception:
+            pass
+    return JSONResponse(content=result)
+
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    file_path = STATIC_DIR / full_path
+    if file_path.is_file():
+        return FileResponse(str(file_path))
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(str(index_file), media_type="text/html")
+    return JSONResponse({"status": "ok"})
 
 
 def _read_json(path: Path):

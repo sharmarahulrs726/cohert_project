@@ -4,8 +4,12 @@ Configuration module for the Tax Investigation System.
 Handles directory auto-detection, template path discovery,
 and all configurable constants used throughout the system.
 
+All file-system paths are consolidated in src.paths — this module
+imports them from there and adds LLM configuration, template
+detection, and runtime bootstrap logic.
+
 Usage:
-    from src.config import BASE_DIR, init_config, get_llm_config
+    from src.config import init_config, get_llm_config
     init_config()  # bootstraps directories and detects templates
     cfg = get_llm_config()  # fresh config every call (reads .env)
 """
@@ -16,22 +20,17 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
+from src.paths import (
+    PROJECT_ROOT, ENV_PATH, IS_VERCEL,
+    OUTPUT_DIR, AUDIT_DIR, LOG_DIR,
+    API_DIR, API_INPUT_BASE, API_OUTPUT_BASE,
+    SAMPLE_DIR, LIBREOFFICE_CMD,
+)
+
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Project root (src/config.py -> project root)
-# ---------------------------------------------------------------------------
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-ENV_PATH = PROJECT_ROOT / ".env"
-
-# ---------------------------------------------------------------------------
-# Default base paths (can be overridden via environment or direct assignment)
-# ---------------------------------------------------------------------------
+# Backward-compatible alias
 BASE_DIR = PROJECT_ROOT
-SAMPLE_DIR = BASE_DIR / "sample"
-OUTPUT_DIR = BASE_DIR / "output"
-AUDIT_DIR = BASE_DIR / "audit"
-
 
 # ---------------------------------------------------------------------------
 # LLM configuration (runtime-evaluated via get_llm_config())
@@ -89,15 +88,6 @@ MODEL_NAME = os.getenv("LLM_MODEL") or os.getenv("VLLM_MODEL_NAME") or "qwen/qwe
 VLLM_API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("ONLINE_LLM_KEY") or os.getenv("VLLM_API_KEY")
 
 OPENROUTER_TOP_N = 3
-
-
-# ---------------------------------------------------------------------------
-# LibreOffice path (platform-aware)
-# ---------------------------------------------------------------------------
-LIBREOFFICE_CMD: str = os.getenv(
-    "LIBREOFFICE_CMD",
-    "soffice" if sys.platform == "win32" else "libreoffice",
-)
 
 
 # ---------------------------------------------------------------------------

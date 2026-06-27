@@ -96,6 +96,19 @@ def safe_decimal(value: Any, default: Decimal = Decimal("0")) -> Decimal:
 # Directory helper
 # ---------------------------------------------------------------------------
 def ensure_dir(path: Path) -> Path:
-    """Create directory (parents as needed) and return the path."""
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    """Create directory (parents as needed) and return the path.
+    Falls back to /tmp if permission denied on primary path.
+    """
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    except PermissionError:
+        fallback = Path("/tmp") / path.name
+        logger.warning("Permission denied for %s, falling back to %s", path, fallback)
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+    except OSError as e:
+        fallback = Path("/tmp") / path.name
+        logger.warning("Failed to create %s (%s), falling back to %s", path, e, fallback)
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback

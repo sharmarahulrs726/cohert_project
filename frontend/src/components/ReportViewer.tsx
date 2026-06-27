@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { ReportData } from '../types';
+import { getFileUrl } from '../services/api';
 
 interface ReportViewerProps {
   data: ReportData;
@@ -295,7 +296,7 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({
                 {Object.entries(data.generated_files).map(([name, path]) => (
                   <a
                     key={name}
-                    href={`/api/files/${sessionId}/${name}`}
+                    href={getFileUrl(sessionId, name)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center p-3 border rounded-lg hover:bg-blue-50 hover:border-blue-300 transition"
